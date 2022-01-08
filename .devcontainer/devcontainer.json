@@ -1,0 +1,35 @@
+{
+	"name": "C++",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": { "VARIANT": "ubuntu-21.04" }
+	},
+	"runArgs": ["--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined"],
+
+	"settings": {
+		"C_Cpp.intelliSenseEngine": "Disabled",
+		"C_Cpp.autocomplete": "Disabled",
+		"C_Cpp.errorSquiggles": "Disabled",
+		"clangd.path": "/usr/bin/clangd-12"
+	},
+	
+	"extensions": [
+		"ms-vscode.cpptools",
+		"llvm-vs-code-extensions.vscode-clangd",
+		"ms-vscode.cmake-tools",
+		"editorconfig.editorconfig",
+		"eamodio.gitlens"
+	],
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "gcc -v",
+
+	// Comment out connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "vscode",
+	"features": {
+		"python": "os-provided"
+	}
+}
