@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
 
@@ -54,16 +55,12 @@ std::pair<std::vector<cv::Point2f>,std::vector<cv::Point2f>> TrackerImpl::Track(
     std::vector<float> err;
     
     std::vector<cv::Point2f> old_corners, new_corners;
-    cv::calcOpticalFlowPyrLK(prev, cur, corners_, new_corners, status, err);
-    // cv::cornerSubPix(
-    //     cur, new_corners, cv::Size(10, 10), cv::Size(-1, -1),
-    //     cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS,
-    //                         20, .03));
+    cv::calcOpticalFlowPyrLK(prev, cur, corners_, new_corners, status, err, cv::Size(31, 31), 3, cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 100, .001), 0, 1e-3);
 
 
     auto old_corner_iter = corners_.begin();
     auto new_corner_iter = new_corners.begin();
-
+    auto status_iter = status.begin();
     std::cout << corners_.size() << std::endl;
     while (new_corner_iter != new_corners.end()) {
         // auto old_response = CornerQuality(prev, *old_corner_iter);
@@ -71,12 +68,14 @@ std::pair<std::vector<cv::Point2f>,std::vector<cv::Point2f>> TrackerImpl::Track(
 
         // std::cout << old_response << " " << new_response << std::endl;
 
-        if (10 * new_response < init_discard_tresh_) {
+        if (2 * new_response < init_discard_tresh_ || !*status_iter) {
             old_corner_iter = corners_.erase(old_corner_iter);
             new_corner_iter = new_corners.erase(new_corner_iter);
+            status_iter = status.erase(status_iter);
         } else {
             ++old_corner_iter;
             ++new_corner_iter;
+            ++status_iter;
         }
     }
 
