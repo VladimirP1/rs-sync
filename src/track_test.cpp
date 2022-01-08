@@ -97,53 +97,20 @@ int main() {
             auto scale = (1 + (new_c[i].y - old_c[i].y) / 4000. * .75);
             new_u[i].x = (new_u[i].x - old_u[i].x) * scale + old_u[i].x;
             new_u[i].y = (new_u[i].y - old_u[i].y) * scale + old_u[i].y;
-            // std::cout << (1 + (new_c[i].y - old_c[i].y) / 4000. * .75) <<
-            // std::endl;
         }
 
         std::vector<uchar> mask;
         auto E = cv::findEssentialMat(old_u, new_u, 1., cv::Point2d(0, 0),
-                                      cv::RANSAC, .999, .1, mask);
+                                      cv::RANSAC, .999, .01, mask);
         cv::Mat R, t, points4d;
 
         cv::recoverPose(E, old_u, new_u, cv::Mat::eye(3, 3, CV_64F), R, t, 1000,
                         mask, points4d);
 
-        cv::Mat R1, R2, t, R1v, R2v, v1, v2;
         cv::Mat v = (cv::Mat_<double>(3, 1) << 0, 0, 1);
 
-        cv::decomposeEssentialMat(E, R1, R2, t);
-        cv::Rodrigues(R1, R1v);
-        cv::Rodrigues(R2, R2v);
-
-        v1 = R1 * v;
-        v2 = R2 * v;
-
+        cv::Mat v1 = R * v;
         v1 /= v1.at<double>(2);
-        v2 /= v2.at<double>(2);
-
-        if (cv::norm(v1) > cv::norm(v2)) {
-            std::swap(R1, R2);
-            std::swap(R1v, R2v);
-            std::swap(v1, v2);
-            t = -t;
-        }
-
-        cv::Mat hh = (cv::Mat_<double>(3, 1) << 0, 0, 0);
-        cv::Mat PM1a, PM1b, PM2;
-        cv::invert(R1, PM1a);
-        // PM1a = R1.clone();
-        PM1b = PM1a.clone();
-        cv::hconcat(PM1a, t, PM1a);
-        cv::hconcat(PM1b, -t, PM1b);
-
-        cv::hconcat(cv::Mat::eye(3, 3, CV_64F), hh, PM2);
-
-        cv::Mat points4d_a, points4d_b;
-        cv::triangulatePoints(PM1a, PM2, old_u, new_u, points4d_a);
-        cv::triangulatePoints(PM1b, PM2, old_u, new_u, points4d_b);
-
-        img = reader.Cur().clone();
 
         // cv::Mat out;
         // cv::fisheye::undistortImage(img, out, calibration.CameraMatrix(),
@@ -167,34 +134,20 @@ int main() {
 
         // cv::imwrite("outz" + std::to_string(i) + ".jpg", out);
 
-        cv::line(img, cv::Point2f(2000, 1500),
-                 cv::Point2f(2000 + v1.at<double>(0) * 30000000,
-                             1500 + v1.at<double>(1) * 30000000),
-                 cv::Scalar(0, 255, 0), 4);
-
-        for (int i = 0; i < old_c.size(); ++i) {
-            cv::line(img, old_c[i], new_c[i],
-                     cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
-        }
-
         std::vector<cv::Point2d> d_points;
         std::vector<double> depths;
-        for (int i = 0; i < points4d_a.cols; ++i) {
+        for (int i = 0; i < points4d.cols; ++i) {
             if (mask[i]) {
-                auto sa = points4d_a.at<cv::Vec4d>(i);
-                auto sb = points4d_b.at<cv::Vec4d>(i);
-                if (std::fabs(sa[3]) > 1e-3 && sa[3] * sa[2] > 0) {
-                    // std::cout << sa / sa[3] << std::endl;
-                    d_points.push_back(
-                        {sa[0] / sa[2] / sa[3], sa[1] / sa[2] / sa[3]});
-                    depths.push_back(sa[2] / sa[3]);
-                }
-                if (std::fabs(sb[3]) > 1e-3 && sb[3] * sb[2] > 0) {
-                    // std::cout << sb / sb[3] << std::endl;
-                    d_points.push_back(
-                        {sb[0] / sb[2] / sb[3], sb[1] / sb[2] / sb[3]});
-                    depths.push_back(sb[2] / sb[3]);
-                }
+                auto Q = points4d.col(i);
+                Q.row(0) /= Q.row(3);
+                Q.row(1) /= Q.row(3);
+                Q.row(2) /= Q.row(3);
+                Q.row(3) /= Q.row(3);
+                Q.row(0) /= Q.row(2);
+                Q.row(1) /= Q.row(2);
+                Q.row(3) /= Q.row(2);
+                d_points.push_back({Q.at<double>(0), Q.at<double>(1)});
+                depths.push_back(Q.at<double>(2));
             }
         }
 
@@ -204,11 +157,23 @@ int main() {
                                    calibration.CameraMatrix(),
                                    calibration.DistortionCoeffs());
 
-        for (int i = 0; i < dd_points.size(); ++i) {
-            cv::circle(img, dd_points[i], 5, cv::Scalar(0, depths[i], 255), 3);
-        }
+        // img = reader.Cur().clone();
 
-        cv::imwrite("outz" + std::to_string(i) + ".jpg", img);
+        // cv::line(img, cv::Point2f(2000, 1500),
+        //          cv::Point2f(2000 + v1.at<double>(0) * 3000,
+        //                      1500 + v1.at<double>(1) * 3000),
+        //          cv::Scalar(0, 255, 0), 4);
+
+        // for (int i = 0; i < old_c.size(); ++i) {
+        //     cv::line(img, old_c[i], new_c[i],
+        //              cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
+        // }
+
+        // for (int i = 0; i < dd_points.size(); ++i) {
+        //     cv::circle(img, dd_points[i], 5, cv::Scalar(0, depths[i], 255), 3);
+        // }
+
+        // cv::imwrite("outz" + std::to_string(i) + ".jpg", img);
     }
 
     auto end = std::chrono::steady_clock::now();
