@@ -91,10 +91,11 @@ int main() {
                                      calibration.DistortionCoeffs(),
                                      cv::Mat::eye(3, 3, CV_32F));
 
+        constexpr double rs_cooef = .75;
         for (int i = 0; i < old_c.size(); ++i) {
-            auto scale = (1 + (new_c[i].y - old_c[i].y) / 4000. * .75);
-            new_u[i].x = (new_u[i].x - old_u[i].x) * scale + old_u[i].x;
-            new_u[i].y = (new_u[i].y - old_u[i].y) * scale + old_u[i].y;
+            auto scale = (1 + (new_c[i].y - old_c[i].y) / reader.CurGray().rows * rs_cooef);
+            new_u[i].x = (new_u[i].x - old_u[i].x) / scale + old_u[i].x;
+            new_u[i].y = (new_u[i].y - old_u[i].y) / scale + old_u[i].y;
         }
 
         std::vector<uchar> mask;
@@ -107,7 +108,7 @@ int main() {
         cv::recoverPose(E, old_u, new_u, cv::Mat::eye(3, 3, CV_64F), R, t, 1000,
                         mask, points4d);
 
-        cv::Mat v = (cv::Mat_<double>(3, 1) << 0, 0, 1000);
+        cv::Mat v = (cv::Mat_<double>(3, 1) << 0, 0, 1);
 
         cv::Mat v1 = R * v;
         v1 /= v1.at<double>(2);
