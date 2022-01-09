@@ -19,6 +19,10 @@ endif()
 
 # -----
 
+add_executable(segtree segtree.cpp)
+
+# -----
+
 add_executable(track_test track_test.cpp tracking.cpp calibration.cpp)
 
 target_include_directories(track_test PRIVATE ${OpenCV_INCLUDE_DIRS})
