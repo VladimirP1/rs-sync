@@ -54,18 +54,16 @@ class VideoReader {
 };
 
 int main() {
-    cv::VideoCapture cap("141101AA.MP4");
-    // cv::VideoCapture cap("193653AA.MP4");
-
-    cap.set(cv::CAP_PROP_POS_MSEC, 50e3);
-
     VideoReader reader("141101AA.MP4");
-    TrackerImpl tracker(100, 700);
+    // VideoReader reader("193653AA.MP4");
+
+    TrackerImpl tracker(50, 700);
     FisheyeCalibration calibration;
 
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
 
     reader.SetPosition(42e3);
+    // reader.SetPosition(8e3);
 
     tracker.InitCorners(reader.CurGray());
 
@@ -100,17 +98,23 @@ int main() {
         }
 
         std::vector<uchar> mask;
+        if (old_u.size() < 5) continue;
         auto E = cv::findEssentialMat(old_u, new_u, 1., cv::Point2d(0, 0),
-                                      cv::RANSAC, .999, .01, mask);
+                                      cv::RANSAC, .99, .001, mask);
         cv::Mat R, t, points4d;
 
+        if (E.rows != 3 || E.cols != 3) continue;
         cv::recoverPose(E, old_u, new_u, cv::Mat::eye(3, 3, CV_64F), R, t, 1000,
                         mask, points4d);
 
-        cv::Mat v = (cv::Mat_<double>(3, 1) << 0, 0, 1);
+        cv::Mat v = (cv::Mat_<double>(3, 1) << 0, 0, 1000);
 
         cv::Mat v1 = R * v;
         v1 /= v1.at<double>(2);
+
+        cv::Mat Rv;
+        cv::Rodrigues(R, Rv);
+        std::cout << cv::norm(Rv) * 180 / 3.14 << std::endl;
 
         // cv::Mat out;
         // cv::fisheye::undistortImage(img, out, calibration.CameraMatrix(),
@@ -134,7 +138,13 @@ int main() {
 
         // cv::imwrite("outz" + std::to_string(i) + ".jpg", out);
 
+        cv::Mat P0 = cv::Mat::eye(3, 4, R.type());
+        cv::Mat P1(3, 4, R.type());
+        P1(cv::Range::all(), cv::Range(0, 3)) = R * 1.0;
+        P1.col(3) = t * 1.0;
+
         std::vector<cv::Point2d> d_points;
+        std::vector<cv::Point2d> d_points2;
         std::vector<double> depths;
         for (int i = 0; i < points4d.cols; ++i) {
             if (mask[i]) {
@@ -143,11 +153,16 @@ int main() {
                 Q.row(1) /= Q.row(3);
                 Q.row(2) /= Q.row(3);
                 Q.row(3) /= Q.row(3);
-                Q.row(0) /= Q.row(2);
-                Q.row(1) /= Q.row(2);
-                Q.row(3) /= Q.row(2);
-                d_points.push_back({Q.at<double>(0), Q.at<double>(1)});
-                depths.push_back(Q.at<double>(2));
+
+                d_points2.push_back({Q.at<double>(0) / Q.at<double>(2),
+                                     Q.at<double>(1) / Q.at<double>(2)});
+                // depths.push_back(Q.at<double>(2));
+                Q = P1 * Q;
+                cv::Mat m(3, 1, CV_64F);
+                m = Q(cv::Range(0, 3), cv::Range(0, 1)).clone();
+                d_points.push_back({m.at<double>(0) / m.at<double>(2),
+                                    m.at<double>(1) / m.at<double>(2)});
+                depths.push_back(m.at<double>(2));
             }
         }
 
@@ -157,23 +172,32 @@ int main() {
                                    calibration.CameraMatrix(),
                                    calibration.DistortionCoeffs());
 
-        // img = reader.Cur().clone();
+        std::vector<cv::Point2d> dd_points2;
 
-        // cv::line(img, cv::Point2f(2000, 1500),
-        //          cv::Point2f(2000 + v1.at<double>(0) * 3000,
-        //                      1500 + v1.at<double>(1) * 3000),
-        //          cv::Scalar(0, 255, 0), 4);
+        cv::fisheye::distortPoints(d_points2, dd_points2,
+                                   calibration.CameraMatrix(),
+                                   calibration.DistortionCoeffs());
 
-        // for (int i = 0; i < old_c.size(); ++i) {
-        //     cv::line(img, old_c[i], new_c[i],
-        //              cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
-        // }
+        img = reader.Cur().clone();
 
-        // for (int i = 0; i < dd_points.size(); ++i) {
-        //     cv::circle(img, dd_points[i], 5, cv::Scalar(0, depths[i], 255), 3);
-        // }
+        cv::line(img, cv::Point2f(2000, 1500),
+                 cv::Point2f(2000 + v1.at<double>(0) * 3000,
+                             1500 + v1.at<double>(1) * 3000),
+                 cv::Scalar(0, 255, 0), 4);
 
-        // cv::imwrite("outz" + std::to_string(i) + ".jpg", img);
+        for (int i = 0; i < old_c.size(); ++i) {
+            cv::line(img, old_c[i], new_c[i],
+                     cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
+        }
+
+        for (int i = 0; i < dd_points.size(); ++i) {
+            cv::circle(img, dd_points[i], 5, cv::Scalar(0, depths[i], 255), 3);
+
+            cv::line(img, dd_points[i], dd_points2[i], cv::Scalar(255, 0, 255),
+                     3);
+        }
+
+        cv::imwrite("outz" + std::to_string(i) + ".jpg", img);
     }
 
     auto end = std::chrono::steady_clock::now();
