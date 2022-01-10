@@ -55,7 +55,7 @@ std::pair<std::vector<cv::Point2f>,std::vector<cv::Point2f>> TrackerImpl::Track(
     std::vector<float> err;
     
     std::vector<cv::Point2f> old_corners, new_corners;
-    cv::calcOpticalFlowPyrLK(prev, cur, corners_, new_corners, status, err, cv::Size(21, 21), 3, cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, .001), 0, 1e-4);
+    cv::calcOpticalFlowPyrLK(prev, cur, corners_, new_corners, status, err, cv::Size(21, 21), 6, cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, .001), 0, 1e-4);
 
 
     auto old_corner_iter = corners_.begin();
