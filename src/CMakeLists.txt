@@ -23,7 +23,7 @@ add_subdirectory(lib)
 # ---- Executable targets ----
 
 add_executable(segtree segtree.cpp)
-target_link_libraries(segtree libmath)
+target_link_libraries(segtree libmath libio)
 
 # ----
 
