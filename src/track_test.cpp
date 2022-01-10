@@ -1,25 +1,21 @@
 
-#include <opencv2/core/hal/interface.h>
-
 #include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <vector>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
-#include <opencv2/core/mat.hpp>
-#include <opencv2/core/matx.hpp>
-#include <opencv2/core/types.hpp>
 #include <opencv2/features2d.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
 #include <opencv2/videoio.hpp>
-#include <string>
-#include <vector>
 
-#include "calibration.hpp"
-#include "tracking.hpp"
+#include <vision/calibration.hpp>
+#include <vision/tracking.hpp>
 
 class VideoReader {
    public:
@@ -55,16 +51,22 @@ class VideoReader {
 };
 
 int main() {
+    // VideoReader reader("GX019642.MP4");
+    // VideoReader reader("VID_20220110_135451.mp4");
     VideoReader reader("141101AA.MP4");
     // VideoReader reader("193653AA.MP4");
 
     TrackerImpl tracker(50, 700);
     FisheyeCalibration calibration;
 
+    // std::ifstream("Google_Pixel_5_Filmic_pro_ultrawide_4k.json") >>
+    // calibration;
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
+    // std::ifstream("GoPro_Hero6_2160p_16by9_wide.json") >> calibration;
 
-    // reader.SetPosition(42e3);
-    reader.SetPosition(10e3);
+    reader.SetPosition(42e3);
+    // reader.SetPosition(65e3);
+    // reader.Advance();
 
     tracker.InitCorners(reader.CurGray());
 
@@ -201,9 +203,8 @@ int main() {
                      3);
         }
 
-
         // extract patches around features
-        const int patch_size = 12;
+        const int patch_size = 40;
         const int half_size = patch_size / 2;
         cv::Mat patches0 = cv::Mat::zeros(1000, 1000, CV_8UC3);
         cv::Mat patches1 = cv::Mat::zeros(1000, 1000, CV_8UC3);
@@ -259,15 +260,17 @@ int main() {
             rms = std::sqrt(rms / dd_points0.size());
             // rms = rms / dd_points0.size();
             cv::putText(patches0, std::to_string(rms), cv::Point(500, 900),
-                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
+                        cv::LINE_AA);
             cv::putText(patches1, std::to_string(rms), cv::Point(500, 900),
-                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
-            cv::line(img, cv::Point2f(15,400), cv::Point2f(15,400 - rms * 50), cv::Scalar(255,0,0), 20);
+                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
+                        cv::LINE_AA);
+            cv::line(img, cv::Point2f(15, 400), cv::Point2f(15, 400 - rms * 50),
+                     cv::Scalar(255, 0, 0), 20);
         }
-        // cv::imwrite("out" + std::to_string(i) + "a.jpg", patches0);
-        // cv::imwrite("out" + std::to_string(i) + "b.jpg", patches1);
+        cv::imwrite("out" + std::to_string(i) + "a.jpg", patches0);
+        cv::imwrite("out" + std::to_string(i) + "b.jpg", patches1);
         cv::imwrite("out" + std::to_string(i) + ".jpg", img);
-
     }
 
     auto end = std::chrono::steady_clock::now();

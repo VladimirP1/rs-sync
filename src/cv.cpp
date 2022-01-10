@@ -1,21 +1,22 @@
 
-#include <opencv2/core/hal/interface.h>
 
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <string>
+#include <vector>
+
 #include <opencv2/core.hpp>
-#include <opencv2/core/hal/intrin.hpp>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/hal/intrin_sse.hpp>
+#include <opencv2/core/hal/intrin.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/features2d.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
-#include <string>
-#include <vector>
 
 #include "tracking.hpp"
 

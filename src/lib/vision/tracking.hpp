@@ -1,7 +1,6 @@
 #pragma once
 
 #include <opencv2/core.hpp>
-#include <opencv2/features2d.hpp>
 
 class TrackerImpl {
    public:

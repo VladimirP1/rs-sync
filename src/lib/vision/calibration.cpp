@@ -1,6 +1,7 @@
 #include "calibration.hpp"
 
 #include <iostream>
+
 #include <nlohmann/json.hpp>
 
 FisheyeCalibration::FisheyeCalibration() {}

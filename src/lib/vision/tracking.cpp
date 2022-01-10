@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
@@ -13,6 +14,7 @@ void TrackerImpl::InitCorners(const cv::Mat& img) {
     const double discard_treshold = 1e-3;
     int minDist = std::sqrt(img.rows * img.cols / 3 / max_corners_);
     cv::goodFeaturesToTrack(img, corners_, max_corners_, discard_treshold, minDist);
+    if (corners_.empty()) return;
     cv::cornerSubPix(
         img, corners_, cv::Size(10, 10), cv::Size(-1, -1),
         cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20,
