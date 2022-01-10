@@ -25,13 +25,20 @@ add_subdirectory(lib)
 add_executable(segtree segtree.cpp)
 target_link_libraries(segtree libmath libio)
 
-# ----
+# -----
 
 add_executable(track_test track_test.cpp)
 target_include_directories(track_test PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(track_test ${OpenCV_LIBS})
-target_link_libraries(track_test nlohmann_json::nlohmann_json)
 target_link_libraries(track_test libvision)
+
+# -----
+
+add_executable(main main.cpp)
+target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(main ${OpenCV_LIBS})
+target_link_libraries(main libvision)
+
 
 # --------------------------------------------------------------------------
 
