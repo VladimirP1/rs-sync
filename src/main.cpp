@@ -49,7 +49,7 @@ cv::Mat GetP(const FisheyeCalibration& calibration) {
 
 void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
                      cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
-                            static constexpr double eps = 1e-9;
+    static constexpr double eps = 1e-9;
     static constexpr int kNumIterations = 9;
     auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
     auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
@@ -90,85 +90,15 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
 
     double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
     double drDtheta_ = drDtheta * dthetaDtheta_;
-    double dsDtheta_ = (theta_ < eps)
-                           ? 0.
-                           : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
-
-    xy = {x_ * s, y_ * s};
+    double dsDtheta_ =
+        (theta_ < eps) ? 0. : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
 
     double dxdu = dx_du * s + x_ * dsDtheta_ * dtheta_dx_ * dx_du;
     double dydv = dy_dv * s + y_ * dsDtheta_ * dtheta_dy_ * dy_dv;
     double dxdv = x_ * dsDtheta_ * dtheta_dy_ * dy_dv;
     double dydu = y_ * dsDtheta_ * dtheta_dx_ * dx_du;
 
-    cv::Mat_<double> ret(2, 2, CV_64F);
-    ret << dxdu, dxdv, dydu, dydv;
-
-    J = ret;
-}
-
-void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
-                     cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
-    static constexpr double eps = 1e-9;
-    static constexpr int kNumIterations = 9;
-    auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
-    auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
-
-    double f_x = K(0, 0), f_y = K(1, 1), c_x = K(0, 2), c_y = K(1, 2);
-    double u = uv.x, v = uv.y;
-
-    double x0 = pow(f_x, -2), x1 = c_x - u, x2 = x0 * pow(x1, 2),
-           x3 = pow(f_y, -2), x4 = c_y - v, x5 = x3 * pow(x4, 2), x6 = x2 + x5,
-           x7 = sqrt(x6);
-
-    double theta_ = x7;
-    double theta = M_PI / 4.;
-    double dthetaDtheta_ = 0;
-    for (int i = 0; i < kNumIterations; ++i) {
-        double theta2 = theta * theta, theta3 = theta2 * theta,
-               theta4 = theta2 * theta2, theta5 = theta2 * theta3,
-               theta6 = theta3 * theta3, theta7 = theta3 * theta4,
-               theta8 = theta4 * theta4, theta9 = theta4 * theta5;
-        double cur_theta_ = theta + D(0) * theta3 + D(1) * theta5 +
-                            D(2) * theta7 + D(3) * theta9;
-        double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
-                             7 * D(2) * theta6 + 8 * D(3) * theta8;
-        double error = cur_theta_ - theta_;
-        dthetaDtheta_ = 1. / cur_dTheta_;
-        double new_theta = theta - error * dthetaDtheta_;
-        while (new_theta >= M_PI / 2. || new_theta <= 0.) {
-            new_theta = (new_theta + theta) / 2.;
-        }
-        theta = new_theta;
-    }
-
-    double x8 = tan(theta), x9 = x8 / x7, x10 = 1.0 / f_x, x11 = x1 * x10,
-           x12 = 1.0 / f_y, x13 = x12 * x4, x14 = x8 / pow(x6, 3.0 / 2.0),
-           x15 = (pow(x8, 2.) + 1) * dthetaDtheta_ / x6, x16 = -x14 + x15;
-
-    double x = -x11 * x9, y = -x13 * x9;
-    double dxdu = x10 * (-x14 * x2 + x15 * x2 + x9);
-    double dxdv = x11 * x16 * x3 * x4;
-    double dydu = x0 * x1 * x13 * x16;
-    double dydv = x12 * (-x14 * x5 + x15 * x5 + x9);
-
-    if (std::fabs(x1) < eps) {
-        dxdu = 0.;
-        dydu = 0.; 
-    }
-
-    if (std::fabs(x4) < eps) {
-        dxdv = 0.;
-        dydv = 0.;
-    }
-
-    if (std::fabs(x1) < eps && std::fabs(x4) < eps) {
-        x = 0.;
-        y = 0.;
-    }
-
-    xy = {x, y};
-
+    xy = {x_ * s, y_ * s};
 
     // clang-format off
     cv::Mat_<double> ret(3, 3, CV_64F);
@@ -180,6 +110,51 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
     A = ret;
 }
 
+cv::Point2d MatToPoint31d(cv::Mat_<double> m) {
+    return {m(0) / m(2), m(1) / m(2)};
+}
+
+struct Tim {
+    std::chrono::steady_clock::time_point start =
+        std::chrono::steady_clock::now();
+    ~Tim() {
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> dur = (end - start);
+        std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(dur)
+                         .count()
+                  << std::endl;
+    }
+};
+
+class Mosaic {
+   public:
+    Mosaic(const cv::Mat& output, int patch_size)
+        : rows_(output.rows), cols_(output.cols), patch_size_(patch_size) {}
+
+    bool Add(cv::Mat& out, const cv::Mat& m) {
+        if (j + patch_size_ >= cols_ || i + patch_size_ >= rows_) {
+            return false;
+        }
+
+        m.copyTo(out(cv::Rect(j, i, patch_size_, patch_size_)));
+
+        j += patch_size_;
+        if (j + patch_size_ >= cols_) {
+            j = 0;
+            i += patch_size_;
+        }
+
+        if (i + patch_size_ >= rows_) {
+            return false;
+        }
+    }
+
+   private:
+    int i{}, j{};
+    int rows_, cols_;
+    int patch_size_;
+};
+
 int main(int argc, char** argv) {
     std::ifstream fs("GoPro_Hero6_2160p_43.json");
 
@@ -187,46 +162,79 @@ int main(int argc, char** argv) {
     fs >> c;
     auto P = GetP(c);
 
-    cv::Mat J;
-    cv::Point2d upoint;
-    UndistortPointG(cv::Point2d{2000, 1600}, upoint, J, c.CameraMatrix(),
-                    c.DistortionCoeffs());
+    std::vector<cv::Point2d> upts, pts{cv::Point2d{2009, 1507}};
+    cv::fisheye::undistortPoints(pts, upts, c.CameraMatrix(),
+                                 c.DistortionCoeffs());
+    std::cout << upts[0] << std::endl;
 
-    std::cout << upoint << std::endl << P * J << std::endl;
+    cv::VideoCapture cap("141101AA.MP4");
 
-    auto A = AffineApproximation(c.CameraMatrix(), c.DistortionCoeffs(), P,
-                                 cv::Point2f{2000, 1600}, cv::Size(1, 1));
-
-    std::cout << A << std::endl;
-
-    // std::vector<cv::Point2d> upts, pts{cv::Point2d{2009, 1507}};
-    // cv::fisheye::undistortPoints(pts, upts, c.CameraMatrix(),
-    //                              c.DistortionCoeffs());
-    // std::cout << upts[0] << std::endl;
-
-    // cv::VideoCapture cap("141101AA.MP4");
-
-    // cv::Mat frame;
-    // cap.read(frame);
+    cv::Mat frame, gray;
+    cap.set(cv::CAP_PROP_POS_MSEC, 42e3);
+    cap.read(frame);
+    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
     // cv::Mat undistorted;
-    // cv::fisheye::undistortImage(frame, undistorted, c.CameraMatrix(),
-    // c.DistortionCoeffs(), P); cv::imwrite("outd.png", frame);
+    // {
+    //     Tim t;
+    //     cv::fisheye::undistortImage(frame, undistorted, c.CameraMatrix(),
+    //                                 c.DistortionCoeffs(), P);
+    // }
+    // cv::imwrite("outd.png", frame);
     // cv::imwrite("outu.png", undistorted);
 
-    // cv::Mat result;
-    // double patch_size = 100;
-    // cv::Point2d center{3274, 445};
-    // cv::Mat patch = frame(cv::Rect(center - cv::Point2d{patch_size,
-    // patch_size},
-    //                                cv::Size(patch_size * 2, patch_size *
-    //                                2)));
-    // auto A =
-    //     AffineApproximation(c.CameraMatrix(), c.DistortionCoeffs(), P,
-    //     center, patch.size());
-    // cv::warpAffine(patch, result, A, cv::Size(patch_size * 2, patch_size *
-    // 2));
+    std::vector<cv::Point2d> corners;
+    cv::goodFeaturesToTrack(gray, corners, 2000, .01, 50);
 
-    // cv::imwrite("outa.png", patch);
-    // cv::imwrite("outb.png", result);
+    std::cout << "Found " << corners.size() << " corners" << std::endl;
+
+    double patch_size = 40;
+    double dst_patch_size = 40;
+    cv::Mat result;
+    cv::Mat mos = cv::Mat::zeros(1080, 1920, CV_8UC3);
+    Mosaic mosaic(mos, dst_patch_size * 2);
+    cv::Mat_<double> A, PS = P.clone();
+    PS(0, 2) = PS(1, 2) = 0.;
+    {
+    Tim t;
+    for (int i = 0; i < corners.size(); ++i) {
+        cv::Point2d center = corners[i];
+
+        if (center.x + patch_size > frame.cols ||
+            center.y + patch_size > frame.rows || center.x - patch_size < 0 ||
+            center.y - patch_size < 0) {
+            continue;
+        }
+
+        cv::Mat patch =
+            frame(cv::Rect(center - cv::Point2d{patch_size, patch_size},
+                           cv::Size(patch_size * 2, patch_size * 2)));
+
+        cv::Point2d xy;
+        UndistortPointG(center, xy, A, c.CameraMatrix(), c.DistortionCoeffs());
+
+        // if ((std::abs(A(0,0)) + std::abs(A(1,1))) > 15*(std::abs(A(0,1)) +
+        // std::abs(A(1,0)))) {
+        //     continue;
+        // }
+        cv::Mat_<double> T = (PS * A);
+
+        cv::Mat_<double> cp(3, 1, CV_64F);
+        cp << patch_size, patch_size, 1;
+
+        T.col(2) = -T * cp;
+        T(0, 2) += dst_patch_size;
+        T(1, 2) += dst_patch_size;
+
+        cv::warpAffine(patch, result, T(cv::Rect(0, 0, 3, 2)),
+                       cv::Size(dst_patch_size * 2, dst_patch_size * 2),
+                       cv::INTER_CUBIC, cv::BORDER_CONSTANT,
+                       cv::Scalar(0, 255, 0));
+
+        mosaic.Add(mos, result);
+        // cv::imwrite("outa.png", patch);
+        // cv::imwrite("outb.png", result);
+    }
+    }
+    cv::imwrite("out.png", mos);
 }
