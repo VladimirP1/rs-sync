@@ -47,8 +47,9 @@ cv::Mat GetP(const FisheyeCalibration& calibration) {
     return P;
 }
 
-cv::Point2d UndistortPoint(cv::Point2d uv, cv::Mat camera_matrix,
-                           cv::Mat distortion_cooficients) {
+void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
+                     cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
+                            static constexpr double eps = 1e-9;
     static constexpr int kNumIterations = 9;
     auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
     auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
@@ -56,9 +57,15 @@ cv::Point2d UndistortPoint(cv::Point2d uv, cv::Mat camera_matrix,
     double x_ = (uv.x - K(0, 2)) / K(0, 0);
     double y_ = (uv.y - K(1, 2)) / K(1, 1);
 
+    double dx_du = 1. / K(0, 0);
+    double dy_dv = 1. / K(1, 1);
+
     double theta_ = std::sqrt(x_ * x_ + y_ * y_);
+    double dtheta_dx_ = (theta_ < eps) ? 0 : 1. / theta_ * x_;
+    double dtheta_dy_ = (theta_ < eps) ? 0 : 1. / theta_ * y_;
 
     double theta = M_PI / 4.;
+    double dthetaDtheta_ = 0;
     for (int i = 0; i < kNumIterations; ++i) {
         double theta2 = theta * theta, theta3 = theta2 * theta,
                theta4 = theta2 * theta2, theta5 = theta2 * theta3,
@@ -69,7 +76,8 @@ cv::Point2d UndistortPoint(cv::Point2d uv, cv::Mat camera_matrix,
         double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
                              7 * D(2) * theta6 + 8 * D(3) * theta8;
         double error = cur_theta_ - theta_;
-        double new_theta = theta - error / cur_dTheta_;
+        dthetaDtheta_ = 1. / cur_dTheta_;
+        double new_theta = theta - error * dthetaDtheta_;
         while (new_theta >= M_PI / 2. || new_theta <= 0.) {
             new_theta = (new_theta + theta) / 2.;
         }
@@ -77,13 +85,29 @@ cv::Point2d UndistortPoint(cv::Point2d uv, cv::Mat camera_matrix,
     }
 
     double r = std::tan(theta);
+    double inv_cos_theta = 1. / std::cos(theta);
+    double drDtheta = inv_cos_theta * inv_cos_theta;
 
-    double s = (theta_ < 1e-9) ? 1. / std::cos(theta) : r / theta_;
+    double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
+    double drDtheta_ = drDtheta * dthetaDtheta_;
+    double dsDtheta_ = (theta_ < eps)
+                           ? 0.
+                           : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
 
-    return cv::Point2d{x_ * s, y_ * s};
+    xy = {x_ * s, y_ * s};
+
+    double dxdu = dx_du * s + x_ * dsDtheta_ * dtheta_dx_ * dx_du;
+    double dydv = dy_dv * s + y_ * dsDtheta_ * dtheta_dy_ * dy_dv;
+    double dxdv = x_ * dsDtheta_ * dtheta_dy_ * dy_dv;
+    double dydu = y_ * dsDtheta_ * dtheta_dx_ * dx_du;
+
+    cv::Mat_<double> ret(2, 2, CV_64F);
+    ret << dxdu, dxdv, dydu, dydv;
+
+    J = ret;
 }
 
-void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
+void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
                      cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
     static constexpr double eps = 1e-9;
     static constexpr int kNumIterations = 9;
@@ -93,20 +117,13 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
     double f_x = K(0, 0), f_y = K(1, 1), c_x = K(0, 2), c_y = K(1, 2);
     double u = uv.x, v = uv.y;
 
-    // clang-format off
-    double x0 = pow(f_x, -2);
-    double x1 = c_x - u;
-    double x2 = x0*pow(x1, 2);
-    double x3 = pow(f_y, -2);
-    double x4 = c_y - v;
-    double x5 = x3*pow(x4, 2);
-    double x6 = x2 + x5;
-    double x7 = sqrt(x6);
-    
+    double x0 = pow(f_x, -2), x1 = c_x - u, x2 = x0 * pow(x1, 2),
+           x3 = pow(f_y, -2), x4 = c_y - v, x5 = x3 * pow(x4, 2), x6 = x2 + x5,
+           x7 = sqrt(x6);
+
     double theta_ = x7;
     double theta = M_PI / 4.;
     double dthetaDtheta_ = 0;
-    double dthetaDtheta_Dtheta_ = 0;
     for (int i = 0; i < kNumIterations; ++i) {
         double theta2 = theta * theta, theta3 = theta2 * theta,
                theta4 = theta2 * theta2, theta5 = theta2 * theta3,
@@ -116,12 +133,8 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
                             D(2) * theta7 + D(3) * theta9;
         double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
                              7 * D(2) * theta6 + 8 * D(3) * theta8;
-        double cur_Dtheta_Dtheta_ =
-            2 * 3 * D(0) * theta + 4 * 5 * D(1) * theta3 +
-            6 * 7 * D(2) * theta5 + 7 * 8 * D(3) * theta7;
         double error = cur_theta_ - theta_;
         dthetaDtheta_ = 1. / cur_dTheta_;
-        dthetaDtheta_Dtheta_ = 1. / cur_Dtheta_Dtheta_;
         double new_theta = theta - error * dthetaDtheta_;
         while (new_theta >= M_PI / 2. || new_theta <= 0.) {
             new_theta = (new_theta + theta) / 2.;
@@ -129,162 +142,42 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
         theta = new_theta;
     }
 
-    double x8 = tan(theta);
-    double x9 = x8/x7;
-    double x10 = 1.0/f_x;
-    double x11 = x1*x10;
-    double x12 = 1.0/f_y;
-    double x13 = x12*x4;
-    double x14 = pow(x6, -3.0/2.0);
-    double x15 = x14*x8;
-    double x16 = x15*x2;
-    double x17 = pow(x8, 2) + 1;
-    double x18 = theta;
-    double x19 = dthetaDtheta_;
-    double x20 = x17*x19;
-    double x21 = x20/x6;
-    double x22 = -x15 + x21;
-    double x23 = x3*x4;
-    double x24 = x0*x13;
-    double x25 = x15*x5;
-    double x26 = 3*x15 - 3*x21;
-    double x27 = 3*x2;
-    double x28 = x8/pow(x6, 5.0/2.0);
-    double x29 = x14*x17*dthetaDtheta_Dtheta_;
-    double x30 = x20/pow(x6, 2);
-    double x31 = 2*x17*pow(x19, 2);
-    double x32 = -x16*x31 - x2*x29 - x27*x28 + x27*x30;
-    double x33 = x15 - x21;
-    double x34 = x32 + x33;
-    double x35 = x10*x23*x34;
-    double x36 = 3*x5;
-    double x37 = -x25*x31 - x28*x36 - x29*x5 + x30*x36;
-    double x38 = x33 + x37;
-    double x39 = x0*x1*x12*x38;
+    double x8 = tan(theta), x9 = x8 / x7, x10 = 1.0 / f_x, x11 = x1 * x10,
+           x12 = 1.0 / f_y, x13 = x12 * x4, x14 = x8 / pow(x6, 3.0 / 2.0),
+           x15 = (pow(x8, 2.) + 1) * dthetaDtheta_ / x6, x16 = -x14 + x15;
 
-    double x = -x11*x9;
-    double y = -x13*x9;
-    double dxdu = x10*(-x16 + x2*x21 + x9);
-    double dxdv = x11*x22*x23;
-    double dydu = x1*x22*x24;
-    double dydv = x12*(x21*x5 - x25 + x9);
-    double dxdudu = x1*(x26 + x32)/pow(f_x, 3);
-    double dxdvdu = x35;
-    double dydudu = x24*x34;
-    double dydvdu = x39;
-    double dxdudv = x35;
-    double dxdvdv = x11*x3*x38;
-    double dydudv = x39;
-    double dydvdv = x4*(x26 + x37)/pow(f_y, 3);
-    // clang-format on
+    double x = -x11 * x9, y = -x13 * x9;
+    double dxdu = x10 * (-x14 * x2 + x15 * x2 + x9);
+    double dxdv = x11 * x16 * x3 * x4;
+    double dydu = x0 * x1 * x13 * x16;
+    double dydv = x12 * (-x14 * x5 + x15 * x5 + x9);
 
-    std::cout << dxdudv << " " << dxdvdu << std::endl;
+    if (std::fabs(x1) < eps) {
+        dxdu = 0.;
+        dydu = 0.; 
+    }
 
-    cv::Mat_<double> ret(2, 2, CV_64F);
-    ret << dxdu, dxdv, dydu, dydv;
-    J = ret;
-}
+    if (std::fabs(x4) < eps) {
+        dxdv = 0.;
+        dydv = 0.;
+    }
 
-void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
-                     cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
-    static constexpr double eps = 1e-9;
-    static constexpr int kNumIterations = 9;
-    auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
-    auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
+    if (std::fabs(x1) < eps && std::fabs(x4) < eps) {
+        x = 0.;
+        y = 0.;
+    }
 
-    double f_x = K(0, 0), f_y = K(1, 1), c_x = K(0, 2), c_y = K(1, 2);
-    double u = uv.x, v = uv.y;
+    xy = {x, y};
+
 
     // clang-format off
-    double x0 = pow(f_x, -2);
-    double x1 = c_x - u;
-    double x2 = x0*pow(x1, 2);
-    double x3 = pow(f_y, -2);
-    double x4 = c_y - v;
-    double x5 = x3*pow(x4, 2);
-    double x6 = x2 + x5;
-    double x7 = sqrt(x6);
-    
-    double theta_ = x7;
-    double theta = M_PI / 4.;
-    double dthetaDtheta_ = 0;
-    double dthetaDtheta_Dtheta_ = 0;
-    for (int i = 0; i < kNumIterations; ++i) {
-        double theta2 = theta * theta, theta3 = theta2 * theta,
-               theta4 = theta2 * theta2, theta5 = theta2 * theta3,
-               theta6 = theta3 * theta3, theta7 = theta3 * theta4,
-               theta8 = theta4 * theta4, theta9 = theta4 * theta5;
-        double cur_theta_ = theta + D(0) * theta3 + D(1) * theta5 +
-                            D(2) * theta7 + D(3) * theta9;
-        double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
-                             7 * D(2) * theta6 + 8 * D(3) * theta8;
-        double cur_Dtheta_Dtheta_ =
-            2 * 3 * D(0) * theta + 4 * 5 * D(1) * theta3 +
-            6 * 7 * D(2) * theta5 + 7 * 8 * D(3) * theta7;
-        double error = cur_theta_ - theta_;
-        dthetaDtheta_ = 1. / cur_dTheta_;
-        dthetaDtheta_Dtheta_ = 1. / cur_Dtheta_Dtheta_;
-        double new_theta = theta - error * dthetaDtheta_;
-        while (new_theta >= M_PI / 2. || new_theta <= 0.) {
-            new_theta = (new_theta + theta) / 2.;
-        }
-        theta = new_theta;
-    }
-
-    double x8 = tan(theta);
-    double x9 = x8/x7;
-    double x10 = 1.0/f_x;
-    double x11 = x1*x10;
-    double x12 = 1.0/f_y;
-    double x13 = x12*x4;
-    double x14 = pow(x6, -3.0/2.0);
-    double x15 = x14*x8;
-    double x16 = x15*x2;
-    double x17 = pow(x8, 2) + 1;
-    double x18 = theta;
-    double x19 = dthetaDtheta_;
-    double x20 = x17*x19;
-    double x21 = x20/x6;
-    double x22 = -x15 + x21;
-    double x23 = x3*x4;
-    double x24 = x0*x13;
-    double x25 = x15*x5;
-    double x26 = 3*x15 - 3*x21;
-    double x27 = 3*x2;
-    double x28 = x8/pow(x6, 5.0/2.0);
-    double x29 = x14*x17*dthetaDtheta_Dtheta_;
-    double x30 = x20/pow(x6, 2);
-    double x31 = 2*x17*pow(x19, 2);
-    double x32 = -x16*x31 - x2*x29 - x27*x28 + x27*x30;
-    double x33 = x15 - x21;
-    double x34 = x32 + x33;
-    double x35 = x10*x23*x34;
-    double x36 = 3*x5;
-    double x37 = -x25*x31 - x28*x36 - x29*x5 + x30*x36;
-    double x38 = x33 + x37;
-    double x39 = x0*x1*x12*x38;
-
-    double x = -x11*x9;
-    double y = -x13*x9;
-    double dxdu = x10*(-x16 + x2*x21 + x9);
-    double dxdv = x11*x22*x23;
-    double dydu = x1*x22*x24;
-    double dydv = x12*(x21*x5 - x25 + x9);
-    double dxdudu = x1*(x26 + x32)/pow(f_x, 3);
-    double dxdvdu = x35;
-    double dydudu = x24*x34;
-    double dydvdu = x39;
-    double dxdudv = x35;
-    double dxdvdv = x11*x3*x38;
-    double dydudv = x39;
-    double dydvdv = x4*(x26 + x37)/pow(f_y, 3);
+    cv::Mat_<double> ret(3, 3, CV_64F);
+    ret << 
+        dxdu, dxdv, 0., 
+        dydu, dydv, 0.,
+        0.,   0.,   1.;
     // clang-format on
-
-    std::cout << dxdudv << " " << dxdvdu << std::endl;
-
-    cv::Mat_<double> ret(2, 2, CV_64F);
-    ret << dxdu, dxdv, dydu, dydv;
-    J = ret;
+    A = ret;
 }
 
 int main(int argc, char** argv) {
@@ -299,7 +192,7 @@ int main(int argc, char** argv) {
     UndistortPointG(cv::Point2d{2000, 1600}, upoint, J, c.CameraMatrix(),
                     c.DistortionCoeffs());
 
-    std::cout << upoint << std::endl << J * P.at<double>(0, 0) << std::endl;
+    std::cout << upoint << std::endl << P * J << std::endl;
 
     auto A = AffineApproximation(c.CameraMatrix(), c.DistortionCoeffs(), P,
                                  cv::Point2f{2000, 1600}, cv::Size(1, 1));
