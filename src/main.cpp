@@ -83,9 +83,9 @@ cv::Point2d UndistortPoint(cv::Point2d uv, cv::Mat camera_matrix,
     return cv::Point2d{x_ * s, y_ * s};
 }
 
-void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J, cv::Mat camera_matrix,
-                        cv::Mat distortion_cooficients) {
-                            static constexpr double eps = 1e-9;
+void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J,
+                     cv::Mat camera_matrix, cv::Mat distortion_cooficients) {
+    static constexpr double eps = 1e-9;
     static constexpr int kNumIterations = 9;
     auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
     auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
@@ -99,9 +99,22 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J, cv::Mat camera
     double theta_ = std::sqrt(x_ * x_ + y_ * y_);
     double dtheta_dx_ = (theta_ < eps) ? 0 : 1. / theta_ * x_;
     double dtheta_dy_ = (theta_ < eps) ? 0 : 1. / theta_ * y_;
+    double dtheta_dx_dx_ = (theta_ < eps) ? 0  // todo at 0
+                                          : -1. / (theta_ * theta_ * x_ * x_) *
+                                                (dtheta_dx_ * x_ + 1. * theta_);
+    double dtheta_dx_dy_ = (theta_ < eps) ? 0  // todo at 0
+                                          : -1. / (theta_ * theta_ * x_ * x_) *
+                                                (dtheta_dy_ * x_ + 0. * theta_);
+    double dtheta_dy_dx_ = (theta_ < eps) ? 0  // todo at 0
+                                          : -1. / (theta_ * theta_ * y_ * y_) *
+                                                (dtheta_dx_ * y_ + 0. * theta_);
+    double dtheta_dy_dy_ = (theta_ < eps) ? 0  // todo at 0
+                                          : -1. / (theta_ * theta_ * y_ * y_) *
+                                                (dtheta_dx_ * y_ + 1. * theta_);
 
     double theta = M_PI / 4.;
     double dthetaDtheta_ = 0;
+    double dthetaDtheta_Dtheta_ = 0;
     for (int i = 0; i < kNumIterations; ++i) {
         double theta2 = theta * theta, theta3 = theta2 * theta,
                theta4 = theta2 * theta2, theta5 = theta2 * theta3,
@@ -111,8 +124,12 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J, cv::Mat camera
                             D(2) * theta7 + D(3) * theta9;
         double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
                              7 * D(2) * theta6 + 8 * D(3) * theta8;
+        double cur_Dtheta_Dtheta_ =
+            2 * 3 * D(0) * theta + 4 * 5 * D(1) * theta3 +
+            6 * 7 * D(2) * theta5 + 7 * 8 * D(3) * theta7;
         double error = cur_theta_ - theta_;
         dthetaDtheta_ = 1. / cur_dTheta_;
+        dthetaDtheta_Dtheta_ = 1. / cur_Dtheta_Dtheta_;
         double new_theta = theta - error * dthetaDtheta_;
         while (new_theta >= M_PI / 2. || new_theta <= 0.) {
             new_theta = (new_theta + theta) / 2.;
@@ -123,12 +140,19 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J, cv::Mat camera
     double r = std::tan(theta);
     double inv_cos_theta = 1. / std::cos(theta);
     double drDtheta = inv_cos_theta * inv_cos_theta;
+    double drDthetaDtheta = 2 / (drDtheta * inv_cos_theta) * (std::sin(theta));
 
     double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
     double drDtheta_ = drDtheta * dthetaDtheta_;
-    double dsDtheta_ = (theta_ < eps)
-                           ? 0.
-                           : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
+    double drDtheta_dtheta_ = drDthetaDtheta * dthetaDtheta_ * dthetaDtheta_ +
+                              drDtheta * dthetaDtheta_Dtheta_;
+    // clang-format off
+    double dsDtheta_ =
+        (theta_ < eps) ? 0. : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
+    double dsDtheta_dtheta_ =
+        (theta_ < eps) ? 0. : (drDtheta_dtheta_ * drDtheta_ - 1. * drDtheta_) / (theta_ * theta_) -
+        (drDtheta_ * (theta_ * theta_) - 2. * 1. * r) / ((theta_ * theta_) * (theta_ * theta_));
+    // clang-format on
 
     xy = {x_ * s, y_ * s};
 
@@ -136,6 +160,43 @@ void UndistortPointG(cv::Point2d uv, cv::Point2d& xy, cv::Mat& J, cv::Mat camera
     double dydv = dy_dv * s + y_ * dsDtheta_ * dtheta_dy_ * dy_dv;
     double dxdv = x_ * dsDtheta_ * dtheta_dy_ * dy_dv;
     double dydu = y_ * dsDtheta_ * dtheta_dx_ * dx_du;
+
+    // clang-format off
+    double dxdudu = 
+        2 * dx_du * dsDtheta_ * dtheta_dx_ * dx_du +
+        x_ * (dsDtheta_dtheta_ * dtheta_dx_ * dx_du) * dtheta_dx_ * dx_du +
+        x_ * dsDtheta_ * (dtheta_dx_dx_ * dx_du) * dx_du;
+    double dydvdu = 
+        dy_dv * dsDtheta_ * dtheta_dx_ * dx_du +
+        y_ * (dsDtheta_dtheta_ * dtheta_dx_ * dx_du) * dtheta_dy_ * dy_dv +
+        y_ * dsDtheta_ * (dtheta_dy_dx_ * dx_du) * dy_dv;
+    double dxdvdu = 
+        dx_du * dsDtheta_ * dtheta_dy_ * dy_dv +
+        x_ * (dsDtheta_dtheta_ * dtheta_dx_ * dx_du) * dtheta_dy_ * dy_dv +
+        x_ * dsDtheta_ * (dtheta_dy_dx_ * dx_du) * dy_dv;
+    double dydudu = 
+        y_ * (dsDtheta_dtheta_ * dtheta_dx_ * dx_du) * dtheta_dx_ * dx_du +
+        y_ * dsDtheta_ * (dtheta_dx_dx_ * dx_du) * dx_du;
+    
+    // dx_du * dsDtheta_ * dtheta_dy_ * dy_dv
+    double dxdudv = 
+        dx_du * dsDtheta_ * dtheta_dy_ * dy_dv +
+        x_ * (dsDtheta_dtheta_ * dtheta_dy_ * dy_dv) * dtheta_dx_ * dx_du +
+        x_ * dsDtheta_ * (dtheta_dx_dy_ * dy_dv) * dx_du;
+    double dydvdv = 
+        2 * dy_dv * dsDtheta_ * dtheta_dy_ * dy_dv +
+        y_ * (dsDtheta_dtheta_ * dtheta_dy_ * dy_dv) * dtheta_dy_ * dy_dv +
+        y_ * dsDtheta_ * (dtheta_dy_dy_ * dy_dv) * dy_dv;
+    double dxdvdv = 
+        x_ * (dsDtheta_dtheta_ * dtheta_dy_ * dy_dv) * dtheta_dy_ * dy_dv +
+        x_ * dsDtheta_ * (dtheta_dy_dy_ * dy_dv) * dy_dv;
+    double dydudv = 
+        dy_dv * dsDtheta_ * dtheta_dx_ * dx_du +
+        y_ * (dsDtheta_dtheta_ * dtheta_dy_ * dy_dv) * dtheta_dx_ * dx_du +
+        y_ * dsDtheta_ * (dtheta_dx_dy_ * dy_dv) * dx_du;
+    // clang-format on
+
+    std::cout << dxdudv << " " << dxdvdu << std::endl;
 
     cv::Mat_<double> ret(2, 2, CV_64F);
     ret << dxdu, dxdv, dydu, dydv;
@@ -152,13 +213,13 @@ int main(int argc, char** argv) {
 
     cv::Mat J;
     cv::Point2d upoint;
-    UndistortPointG(cv::Point2d{2005, 1500}, upoint, J, c.CameraMatrix(),
-                                  c.DistortionCoeffs());
+    UndistortPointG(cv::Point2d{2005, 3000}, upoint, J, c.CameraMatrix(),
+                    c.DistortionCoeffs());
 
-    std::cout << upoint << std::endl << J * P.at<double>(0,0) << std::endl;
+    std::cout << upoint << std::endl << J * P.at<double>(0, 0) << std::endl;
 
     auto A = AffineApproximation(c.CameraMatrix(), c.DistortionCoeffs(), P,
-                                 cv::Point2f{2005, 1500}, cv::Size(1, 1));
+                                 cv::Point2f{2005, 1508}, cv::Size(1, 1));
 
     std::cout << A << std::endl;
 
