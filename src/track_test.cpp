@@ -122,6 +122,7 @@ int main() {
         cv::Rodrigues(R, Rv);
         std::cout << cv::norm(Rv) * 180 / 3.14 << std::endl;
 
+        // img = reader.Cur().clone();
         // cv::Mat out;
         // cv::fisheye::undistortImage(img, out, calibration.CameraMatrix(),
         //                             calibration.DistortionCoeffs(), P,
@@ -142,7 +143,7 @@ int main() {
         // + t.at<double>(1) /  (1+t.at<double>(2)) * 300),
         // cv::Scalar(255,255,255), 4);
 
-        // cv::imwrite("outz" + std::to_string(i) + ".jpg", out);
+        // cv::imwrite("out" + std::to_string(i) + "u.jpg", out);
 
         cv::Mat P0 = cv::Mat::eye(3, 4, R.type());
         cv::Mat P1(3, 4, R.type());
@@ -184,93 +185,125 @@ int main() {
                                    calibration.CameraMatrix(),
                                    calibration.DistortionCoeffs());
 
-        img = reader.Cur().clone();
+        // img = reader.Cur().clone();
 
-        cv::line(img, cv::Point2f(img.cols / 2., img.rows / 2.),
-                 cv::Point2f(img.cols / 2. + v1.at<double>(0) * 3000,
-                             img.rows / 2. + v1.at<double>(1) * 3000),
-                 cv::Scalar(0, 255, 0), 4);
+        // cv::line(img, cv::Point2f(img.cols / 2., img.rows / 2.),
+        //          cv::Point2f(img.cols / 2. + v1.at<double>(0) * 3000,
+        //                      img.rows / 2. + v1.at<double>(1) * 3000),
+        //          cv::Scalar(0, 255, 0), 4);
 
-        for (int i = 0; i < old_c.size(); ++i) {
-            cv::line(img, old_c[i], new_c[i],
-                     cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
-        }
+        // for (int i = 0; i < old_c.size(); ++i) {
+        //     cv::line(img, old_c[i], new_c[i],
+        //              cv::Scalar(0, mask[i] ? 255 : 0, 255), 3);
+        // }
 
-        for (int i = 0; i < dd_points1.size(); ++i) {
-            cv::circle(img, dd_points1[i], 5, cv::Scalar(0, depths[i], 255), 3);
+        // for (int i = 0; i < dd_points1.size(); ++i) {
+        //     cv::circle(img, dd_points1[i], 5, cv::Scalar(0, depths[i], 255), 3);
 
-            cv::line(img, dd_points1[i], dd_points0[i], cv::Scalar(255, 0, 255),
-                     3);
-        }
+        //     cv::line(img, dd_points1[i], dd_points0[i], cv::Scalar(255, 0, 255),
+        //              3);
+        // }
 
         // extract patches around features
-        const int patch_size = 40;
-        const int half_size = patch_size / 2;
-        cv::Mat patches0 = cv::Mat::zeros(1000, 1000, CV_8UC3);
-        cv::Mat patches1 = cv::Mat::zeros(1000, 1000, CV_8UC3);
-        {
-            double rms = 0;
-            int i{0}, j{0};
-            for (int t = 0; t < dd_points0.size(); ++t) {
-                auto p0 = dd_points0[t];
-                auto p1 = dd_points1[t];
-                if (p0.y + half_size < img.rows &&
-                    p0.x + half_size < img.cols &&
-                    p1.y + half_size < img.rows &&
-                    p1.x + half_size < img.cols && p0.y - half_size > 0 &&
-                    p0.x - half_size > 0 && p1.y - half_size > 0 &&
-                    p1.x - half_size > 0) {
-                    std::cout << i << " " << j << " " << p0.x << " " << p0.y
-                              << " " << p1.x << " " << p1.y << std::endl;
+        // const int patch_size = 100;
+        // const int half_size = patch_size / 2;
+        // cv::Mat patches0 = cv::Mat::zeros(1000, 1000, CV_8UC3);
+        // cv::Mat patches1 = cv::Mat::zeros(1000, 1000, CV_8UC3);
+        // {
+        //     double rms = 0;
+        //     int i{0}, j{0};
+        //     for (int t = 0; t < dd_points0.size(); ++t) {
+        //         auto p0 = dd_points0[t];
+        //         auto p1 = dd_points1[t];
+        //         if (p0.y + 2*half_size < img.rows &&
+        //             p0.x + 2*half_size < img.cols &&
+        //             p1.y + 2*half_size < img.rows &&
+        //             p1.x + 2*half_size < img.cols && p0.y - 2*half_size > 0 &&
+        //             p0.x - 2*half_size > 0 && p1.y - 2*half_size > 0 &&
+        //             p1.x - 2*half_size > 0) {
+        //             // std::cout << i << " " << j << " " << p0.x << " " << p0.y
+        //             //           << " " << p1.x << " " << p1.y << std::endl;
 
-                    cv::Mat dst0(
-                        patches0(cv::Rect(i, j, patch_size, patch_size)));
-                    cv::Mat dst1(
-                        patches1(cv::Rect(i, j, patch_size, patch_size)));
-                    reader
-                        .Prev()(cv::Rect(p0.x - half_size, p0.y - half_size,
-                                         patch_size, patch_size))
-                        .copyTo(dst0);
+        //             cv::Mat dst0(
+        //                 patches0(cv::Rect(i, j, patch_size, patch_size)));
+        //             cv::Mat dst1(
+        //                 patches1(cv::Rect(i, j, patch_size, patch_size)));
+        //             cv::Mat tmp0, tmp1;
+        //             reader
+        //                 .Prev()(cv::Rect(p0.x - half_size, p0.y - half_size,
+        //                                  2*patch_size, 2*patch_size))
+        //                 .copyTo(tmp0);
 
-                    reader
-                        .Cur()(cv::Rect(p1.x - half_size, p1.y - half_size,
-                                        patch_size, patch_size))
-                        .copyTo(dst1);
-                    std::vector<cv::Point2f> pts0, pts1;
-                    std::vector<uchar> status;
-                    std::vector<float> err;
-                    pts0.push_back({half_size, half_size});
-                    cv::calcOpticalFlowPyrLK(dst0, dst1, pts0, pts1, status,
-                                             err);
+        //             reader
+        //                 .Cur()(cv::Rect(p1.x - half_size, p1.y - half_size,
+        //                                 2*patch_size, 2*patch_size))
+        //                 .copyTo(tmp1);
 
-                    auto diff = pts0[0] - pts1[0];
-                    rms += diff.dot(diff);
-                    // rms += std::sqrt(diff.dot(diff));
+        //             cv::Mat shifted_k = calibration.CameraMatrix().clone();
+        //             shifted_k.at<double>(0, 2) -= p0.x - patch_size;
+        //             shifted_k.at<double>(1, 2) -= p0.y - patch_size;
 
-                    j += patch_size;
-                    if (j + patch_size >= patches0.cols) {
-                        j = 0;
-                        i += patch_size;
-                    }
-                }
-                if (i + patch_size >= patches0.rows) {
-                    break;
-                }
-            }
-            rms = std::sqrt(rms / dd_points0.size());
-            // rms = rms / dd_points0.size();
-            cv::putText(patches0, std::to_string(rms), cv::Point(500, 900),
-                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
-                        cv::LINE_AA);
-            cv::putText(patches1, std::to_string(rms), cv::Point(500, 900),
-                        cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
-                        cv::LINE_AA);
-            cv::line(img, cv::Point2f(15, 400), cv::Point2f(15, 400 - rms * 50),
-                     cv::Scalar(255, 0, 0), 20);
-        }
-        cv::imwrite("out" + std::to_string(i) + "a.jpg", patches0);
-        cv::imwrite("out" + std::to_string(i) + "b.jpg", patches1);
-        cv::imwrite("out" + std::to_string(i) + ".jpg", img);
+        //             std::vector<cv::Point2f> pts{cv::Point2f{patch_size, patch_size}};
+        //             std::vector<cv::Point2f> pts_u;
+        //             cv::Mat proj = P.clone();
+                    
+        //             proj.at<double>(0, 0) *= 1;
+        //             proj.at<double>(1, 2) *= 1;
+        //             cv::fisheye::undistortPoints(pts, pts_u, shifted_k,
+        //                                          calibration.DistortionCoeffs(),
+        //                                          proj);
+        //             std::cout << pts[0] << " " << pts_u[0] << std::endl;
+        //             proj.at<double>(0, 2) -= (pts_u[0].x - pts[0].x);
+        //             proj.at<double>(1, 2) -= (pts_u[0].y - pts[0].y);
+
+
+        //             pts_u.clear();
+        //             cv::fisheye::undistortPoints(pts, pts_u, shifted_k,
+        //                                          calibration.DistortionCoeffs(),
+        //                                          proj);
+        //             std::cout << proj << std::endl << pts[0] << " " << pts_u[0] << std::endl;
+
+        //             cv::Mat map1, map2;
+        //             cv::initUndistortRectifyMap(shifted_k, calibration.DistortionCoeffs(), cv::Mat::eye(3,3,CV_64F), proj, cv::Size(patch_size, patch_size), CV_32FC1, map1, map2);
+        //             cv::remap(tmp0, dst0, map1, map2, cv::INTER_CUBIC, cv::BORDER_CONSTANT);
+
+        //             cv::fisheye::undistortImage(tmp0, dst0, shifted_k, calibration.DistortionCoeffs(), proj, cv::Size(patch_size, patch_size));
+
+
+        //             std::vector<cv::Point2f> pts0, pts1;
+        //             std::vector<uchar> status;
+        //             std::vector<float> err;
+        //             pts0.push_back({half_size, half_size});
+        //             cv::calcOpticalFlowPyrLK(dst0, dst1, pts0, pts1, status,
+        //                                      err);
+
+        //             auto diff = pts0[0] - pts1[0];
+        //             rms += diff.dot(diff);
+        //             std::cout << std::sqrt(diff.dot(diff)) << std::endl;
+
+        //             j += patch_size;
+        //             if (j + patch_size >= patches0.cols) {
+        //                 j = 0;
+        //                 i += patch_size;
+        //             }
+        //         }
+        //         if (i + patch_size >= patches0.rows) {
+        //             break;
+        //         }
+        //     }
+        //     rms = std::sqrt(rms / dd_points0.size());
+        //     cv::putText(patches0, std::to_string(rms), cv::Point(500, 900),
+        //                 cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
+        //                 cv::LINE_AA);
+        //     cv::putText(patches1, std::to_string(rms), cv::Point(500, 900),
+        //                 cv::FONT_HERSHEY_COMPLEX, 1, cv::Scalar(0, 0, 255), 2,
+        //                 cv::LINE_AA);
+        //     cv::line(img, cv::Point2f(15, 400), cv::Point2f(15, 400 - rms * 50),
+        //              cv::Scalar(255, 0, 0), 20);
+        // }
+        // cv::imwrite("out" + std::to_string(i) + "a.jpg", patches0);
+        // cv::imwrite("out" + std::to_string(i) + "b.jpg", patches1);
+        // cv::imwrite("out" + std::to_string(i) + ".jpg", img);
     }
 
     auto end = std::chrono::steady_clock::now();
