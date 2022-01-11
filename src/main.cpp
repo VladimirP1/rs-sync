@@ -12,15 +12,7 @@
 #include <vision/calibration.hpp>
 #include <vision/camera_model.hpp>
 #include <vision/utils.hpp>
-
-cv::Mat GetP(const FisheyeCalibration& calibration) {
-    cv::Mat P;
-    cv::fisheye::estimateNewCameraMatrixForUndistortRectify(
-        calibration.CameraMatrix(), calibration.DistortionCoeffs(),
-        cv::Size(calibration.Width(), calibration.Height()),
-        cv::Mat::eye(3, 3, CV_64F), P);
-    return P;
-}
+#include <vision/video_reader.hpp>
 
 cv::Point2d MatToPoint31d(cv::Mat_<double> m) {
     return {m(0) / m(2), m(1) / m(2)};
@@ -31,18 +23,14 @@ int main(int argc, char** argv) {
 
     FisheyeCalibration c;
     fs >> c;
-    auto P = GetP(c);
+    auto P = GetProjectionForUndistort(c);
 
-    std::vector<cv::Point2d> upts, pts{cv::Point2d{2009, 1507}};
-    cv::fisheye::undistortPoints(pts, upts, c.CameraMatrix(),
-                                 c.DistortionCoeffs());
-    std::cout << upts[0] << std::endl;
+    VideoReader reader("141101AA.MP4");
 
-    cv::VideoCapture cap("141101AA.MP4");
+    reader.SetPosition(42e3);
 
-    cv::Mat frame, gray;
-    cap.set(cv::CAP_PROP_POS_MSEC, 42e3);
-    cap.read(frame);
+    cv::Mat frame = reader.Cur(), gray = reader.CurGray();
+
     cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
 
     std::vector<cv::Point2d> corners;
@@ -69,22 +57,30 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            cv::Mat patch =
-                frame(cv::Rect(center - cv::Point2d{static_cast<double>(patch_size), static_cast<double>(patch_size)},
-                               cv::Size(patch_size * 2, patch_size * 2)));
+            cv::Mat patch = frame(
+                cv::Rect(center - cv::Point2d{static_cast<double>(patch_size),
+                                              static_cast<double>(patch_size)},
+                         cv::Size(patch_size * 2, patch_size * 2)));
 
             cv::Point2d xy;
             UndistortPointJacobian(center, xy, A, c.CameraMatrix(),
-                            c.DistortionCoeffs());
+                                   c.DistortionCoeffs());
+
+            // std::vector<cv::Point2d> upts, pts{center};
+            // cv::fisheye::undistortPoints(pts, upts, c.CameraMatrix(),
+            //                             c.DistortionCoeffs());
+            // std::cout << xy << " " << upts[0] << std::endl;
 
             cv::Mat_<double> T = (PS * A);
 
             cv::Mat_<double> cp(3, 1, CV_64F);
             cp << patch_size, patch_size, 1;
 
-            T.col(2) = -T * cp;
-            T(0, 2) += dst_patch_size;
-            T(1, 2) += dst_patch_size;
+            cv::Mat_<double> M = cv::Mat::eye(3,3,CV_64F);
+            M.col(2) = -T * cp;
+            M(0,2) += dst_patch_size;
+            M(1,2) += dst_patch_size;
+            T = M * T;
 
             cv::warpAffine(patch, result, T(cv::Rect(0, 0, 3, 2)),
                            cv::Size(dst_patch_size * 2, dst_patch_size * 2),
@@ -95,16 +91,20 @@ int main(int argc, char** argv) {
 
             const int filter_size = 10;
             result.convertTo(corr, CV_32FC3);
-            cv::Mat templ = corr(cv::Rect(
-                dst_patch_size - filter_size, dst_patch_size - filter_size,
-                2 * filter_size, 2 * filter_size));
+            cv::Mat templ = corr(cv::Rect(dst_patch_size - filter_size,
+                                          dst_patch_size - filter_size,
+                                          2 * filter_size, 2 * filter_size));
 
             cv::matchTemplate(corr, templ, corr, cv::TM_SQDIFF_NORMED);
             corr.convertTo(corr, CV_8UC1, 255);
             cv::cvtColor(corr, corr, cv::COLOR_GRAY2BGR);
 
-            result(cv::Rect(cv::Point(0, 0), result.size())) = cv::Scalar(127,127,127);
-            corr.copyTo(result(cv::Rect(cv::Point((dst_patch_size - filter_size)/2 - 1, (dst_patch_size - filter_size)/2 - 1), corr.size())));
+            result(cv::Rect(cv::Point(0, 0), result.size())) =
+                cv::Scalar(127, 127, 127);
+            corr.copyTo(result(
+                cv::Rect(cv::Point((dst_patch_size - filter_size) / 2 - 1,
+                                   (dst_patch_size - filter_size) / 2 - 1),
+                         corr.size())));
 
             mosaic.Add(corr_mos, result);
             mosaic.Advance();

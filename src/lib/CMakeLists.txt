@@ -1,4 +1,4 @@
-add_library(libvision vision/calibration.cpp vision/tracking.cpp vision/camera_model.cpp)
+add_library(libvision vision/calibration.cpp vision/tracking.cpp vision/camera_model.cpp vision/utils.cpp)
 target_include_directories(libvision PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
 target_link_libraries(libvision PRIVATE ${OpenCV_LIBS})

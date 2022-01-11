@@ -34,6 +34,13 @@ target_link_libraries(track_test libvision)
 
 # -----
 
+add_executable(track_corr track_corr.cpp)
+target_include_directories(track_corr PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(track_corr ${OpenCV_LIBS})
+target_link_libraries(track_corr libvision libio)
+
+# -----
+
 add_executable(main main.cpp)
 target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(main ${OpenCV_LIBS})

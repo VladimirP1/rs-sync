@@ -2,6 +2,9 @@
 
 #include <opencv2/core.hpp>
 
+#include <vision/calibration.hpp>
+
+cv::Mat GetProjectionForUndistort(const FisheyeCalibration& calibration);
 class Mosaic {
    public:
     Mosaic(const cv::Mat& output, int patch_size)

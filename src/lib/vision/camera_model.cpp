@@ -59,6 +59,13 @@ void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
         dxdu, dxdv, 0., 
         dydu, dydv, 0.,
         0.,   0.,   1.;
+
+    cv::Mat_<double> t(3, 3, CV_64F);
+    t << 
+        1., 0., xy.x - uv.x * dxdu - uv.y * dxdv, 
+        0., 1., xy.y - uv.x * dydu - uv.y * dydv,
+        0., 0., 1.;
     // clang-format on
-    A = ret;
+
+    A = t * ret;
 }
