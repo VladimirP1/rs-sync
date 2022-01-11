@@ -193,8 +193,8 @@ int main(int argc, char** argv) {
 
     std::cout << "Found " << corners.size() << " corners" << std::endl;
 
-    double patch_size = 15;
-    double dst_patch_size = 10;
+    int patch_size = 12;
+    int dst_patch_size = 10;
     cv::Mat corr, result;
     cv::Mat corr_mos = cv::Mat::zeros(800, 800, frame.type());
     cv::Mat patch_mos = cv::Mat::zeros(800, 800, frame.type());
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
             }
 
             cv::Mat patch =
-                frame(cv::Rect(center - cv::Point2d{patch_size, patch_size},
+                frame(cv::Rect(center - cv::Point2d{static_cast<double>(patch_size), static_cast<double>(patch_size)},
                                cv::Size(patch_size * 2, patch_size * 2)));
 
             cv::Point2d xy;
@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
 
             mosaic.Add(patch_mos, result);
 
-            const double filter_size = 4;
+            const int filter_size = 4;
             result.convertTo(corr, CV_32FC3);
             cv::Mat templ = corr(cv::Rect(
                 dst_patch_size - filter_size, dst_patch_size - filter_size,
@@ -246,8 +246,8 @@ int main(int argc, char** argv) {
             corr.convertTo(corr, CV_8UC1, 255);
             cv::cvtColor(corr, corr, cv::COLOR_GRAY2BGR);
 
-            result(cv::Rect(cv::Point(0, 0), result.size())) = cv::Scalar(0,0,0);
-            corr.copyTo(result(cv::Rect(cv::Point(0, 0), corr.size())));
+            result(cv::Rect(cv::Point(0, 0), result.size())) = cv::Scalar(127,127,127);
+            corr.copyTo(result(cv::Rect(cv::Point((dst_patch_size - filter_size)/2 - 1, (dst_patch_size - filter_size)/2 - 1), corr.size())));
 
             mosaic.Add(corr_mos, result);
             mosaic.Advance();
