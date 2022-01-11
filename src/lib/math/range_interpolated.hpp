@@ -20,11 +20,11 @@ class Interpolated : public Base {
     }
 
     typename G::value_type SoftQuery(double l, double r) {
-        typename G::value_type ret = group_.unit();
+        typename G::value_type ret = Base::group_.unit();
         l = std::min(std::max(l, 0.), static_cast<double>(data_size_));
         r = std::min(std::max(r, 0.), static_cast<double>(data_size_));
 
-        if (l >= r) return group_.unit();
+        if (l >= r) return Base::group_.unit();
 
         double disc_l = std::ceil(l);
         double disc_r = std::floor(r);
@@ -42,8 +42,8 @@ class Interpolated : public Base {
         }
 
         if (((int)disc_l) <= (int)disc_r) {
-            ret = group_.add(SubQuery(l, disc_l), ret);
-            ret = group_.add(ret, SubQuery(disc_r, r));
+            ret = Base::group_.add(SubQuery(l, disc_l), ret);
+            ret = Base::group_.add(ret, SubQuery(disc_r, r));
         } else {
             ret = SubQuery(l, r);
         }
@@ -53,7 +53,7 @@ class Interpolated : public Base {
 
    private:
     typename G::value_type SubQuery(double l, double r) {
-        if (l == r) return group_.unit();
+        if (l == r) return Base::group_.unit();
         double base;
         if (std::fabs(l - std::round(l)) > std::fabs(r - std::round(r))) {
             base = l;
@@ -67,10 +67,9 @@ class Interpolated : public Base {
         assert(idx >= 0 && idx < data_size_);
         assert(k >= 0 && k <= 1);
 
-        return group_.mult(Base::QueryImpl(idx, idx), k);
+        return Base::group_.mult(Base::QueryImpl(idx, idx), k);
     }
 
    private:
-    G group_;
     size_t data_size_;
 };
