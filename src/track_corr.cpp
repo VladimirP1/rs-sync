@@ -20,34 +20,6 @@
 #include <vision/camera_model.hpp>
 #include <vision/utils.hpp>
 
-cv::Mat_<double> To3d(const cv::Mat_<double>& in) {
-    cv::Mat_<double> out = cv::Mat::eye(3, 4, CV_64F);
-    in.col(0).copyTo(out.col(0));
-    in.col(1).copyTo(out.col(1));
-    in.col(2).copyTo(out.col(3));
-    out(2, 3) = 0;
-
-    return out;
-}
-
-cv::Mat_<double> To2d(const cv::Mat_<double>& in) {
-    cv::Mat_<double> out = cv::Mat::zeros(3, 3, CV_64F);
-    in.col(0).rowRange(0, 3).copyTo(out.col(0));
-    in.col(1).rowRange(0, 3).copyTo(out.col(1));
-    in.col(2).rowRange(0, 3).copyTo(out.col(2));
-    return out;
-}
-
-cv::Mat_<double> To2d(const cv::Mat_<double>& in, double z0, double w0, double z1 = 1.) {
-    cv::Mat_<double> out = cv::Mat::zeros(3, 3, CV_64F), tmp = cv::Mat::eye(3, 3, CV_64F);
-    in.colRange(0, 2).rowRange(0, 3).copyTo(out.colRange(0, 2));
-    out(0, 2) = (in(0, 2) * z0 + in(0, 3) * w0) / z1;
-    out(1, 2) = (in(1, 2) * z0 + in(1, 3) * w0) / z1;
-    out(2, 2) = (in(2, 2) * z0 + in(2, 3) * w0) / z1;
-    out.colRange(0, 2) *= z0 / z1;
-    return out;
-}
-
 cv::Mat_<double> To4x4(const cv::Mat_<double>& in) {
     cv::Mat_<double> out = cv::Mat::eye(4, 4, CV_64F);
     in.copyTo(out(cv::Rect(cv::Point(0, 0), in.size())));
@@ -115,15 +87,10 @@ int main() {
     // std::ifstream("GoPro_Hero6_2160p_16by9_wide.json") >> calibration;
 
     reader.SetPosition(42e3);
-    // reader.SetPosition(65e3);
-    // reader.Advance();
 
     tracker.InitCorners(reader.CurGray());
 
-    cv::Mat_<double> P = GetProjectionForUndistort(calibration), PZ = P.clone();
-    PZ(0, 2) = PZ(1, 2) = 0.;
-
-    std::cout << P << std::endl;
+    cv::Mat_<double> P = GetProjectionForUndistort(calibration);
 
     for (int i = 1; i < 800; ++i) {
         reader.Advance();
@@ -156,18 +123,13 @@ int main() {
         P1(cv::Range::all(), cv::Range(0, 3)) = R * 1.0;
         P1.col(3) = t * 1.0;
 
-        // cv::Mat img0 = reader.Prev(), img = pimg;
-        // cv::fisheye::undistortImage(pimg, img, calibration.CameraMatrix(),
-        //                             calibration.DistortionCoeffs(), P,
-        //                             cv::Size(4000, 3000));
-
-        const cv::Size src_patch_size{40, 40};
-        const cv::Size dst_patch_size{80, 80};
+        const cv::Size src_patch_size{25, 25};
+        const cv::Size dst_patch_size{15, 15};
         const cv::Point2d src_patch_center{src_patch_size.width / 2., src_patch_size.height / 2.};
         const cv::Point2d dst_patch_center{dst_patch_size.width / 2., dst_patch_size.height / 2.};
-        cv::Mat corr_mos = cv::Mat::zeros(800, 800, CV_8UC3);
-        cv::Mat patch0_mos = cv::Mat::zeros(800, 800, CV_8UC3);
-        cv::Mat patch1_mos = cv::Mat::zeros(800, 800, CV_8UC3);
+        cv::Mat corr_mos = cv::Mat::zeros(200, 800, CV_8UC3);
+        cv::Mat patch0_mos = cv::Mat::zeros(200, 800, CV_8UC3);
+        cv::Mat patch1_mos = cv::Mat::zeros(200, 800, CV_8UC3);
         Mosaic mosaic(patch0_mos, dst_patch_size.width);
         for (int i = 0; i < points4d.cols; ++i) {
             if (!mask[i]) continue;
@@ -179,7 +141,6 @@ int main() {
 
             cv::Point3d point0 = cv::Point3d{point0m(0), point0m(1), point0m(2)};
             cv::Point3d point1 = cv::Point3d{point1m(0), point1m(1), point1m(2)};
-            // std::cout << point0 << std::endl;
 
             cv::Point2d dist0, dist1;
             cv::Mat_<double> affineDistort0, affineDistort1, affineUndistort0, affineUndistort1;
@@ -195,7 +156,7 @@ int main() {
             // cv::circle(img, dist1, 5, cv::Scalar(0, 255, 0), 3);
             // cv::circle(img, old_c[i], 5, cv::Scalar(255, 255, 255), 3);
 
-            if (std::abs(dist0.x - 2000) > 1000 || std::abs(dist0.y - 1500) > 1000) continue; 
+            // if (std::abs(dist0.x - 2000) > 1000 || std::abs(dist0.y - 1500) > 1000) continue; 
 
             cv::Mat P0_inv, P1_inv;
             cv::invert(To4x4(P1), P1_inv);
@@ -205,42 +166,17 @@ int main() {
             bool success = true;
             success &= ExtractUndistortedPatch(
                 reader.Prev(), upatch0, dist0,
-                P * To2d(P0_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort0,
+                P * ProjectionTo2d(P0_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort0,
                 src_patch_size, dst_patch_size);
 
-            cv::Mat_<double> PP1 = cv::Mat::eye(4, 4, CV_64F);
-            PP1(0, 0) = point1.z;
-            PP1(1, 1) = point1.z;
-            PP1(2, 2) = point1.z;
-
-            // if (point1.z > 1 || point1.z < .01) continue;
-
-            // PP1(0, 0) = points4d(2, i) * points4d(3, i);
-            // PP1(1, 1) = points4d(2, i) * points4d(3, i);
-            // PP1(2, 2) = points4d(2, i) * points4d(3, i);
-            // PP1(3, 3) = points4d(3, i);
-            // std::cout << affineUndistort1 << std::endl;
-            // P1_inv = To4x4(P1);
-            // cv::Mat_<double> T = P * To2d(P1_inv, points4d(2, i), points4d(3, i), 1) *
-            // affineUndistort1; T /= T(3, 3); T /= T(2, 2); cv::Mat_<double> tmp0 = cv::Mat::eye(3,
-            // 1, CV_64F); tmp0 << dist1.x, dist1.y, 1; cv::Mat_<double> tmp = P * To2d(P1_inv,
-            // points4d(2, i), points4d(3, i), 1) * affineUndistort1;
-            // // tmp /= tmp(2);
-            // std::cout << (T * tmp0).t() << " " << point0m.t() << point1.z
-            //           << std::endl
-            //           << std::endl
-            //           << T << std::endl;
-            // std::cout << point1m << std::endl;
-            // std::cout << T(cv::Rect(0,0,3,3)) * point1m(cv::Range(0,3), cv::Range::all()) << " "
-            // << P * points4d.col(i) << std::endl;
             success &= ExtractUndistortedPatch(
                 reader.Cur(), upatch1, dist1,
-                P * To2d(P1_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort1, src_patch_size,
+                P * ProjectionTo2d(P1_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort1, src_patch_size,
                 dst_patch_size);
 
             if (!success) continue;
 
-            MatchPatches(upatch0, upatch1, ucorr, cv::Size(16, 16));
+            MatchPatches(upatch0, upatch1, ucorr, cv::Size(8, 8));
 
             cv::Point minloc;
             cv::minMaxLoc(ucorr, nullptr, nullptr, &minloc);
@@ -255,21 +191,8 @@ int main() {
             mosaic.Add(corr_mos, ucorr);
 
             mosaic.Advance();
-
-            // cv::imwrite("out" + std::to_string(i) + "a.jpg", upatch);
         }
 
-        // cv::Mat img = reader.Prev();
-        // for (int i = 0; i < points2d_0.rows; ++i) {
-        //     if (!mask[i]) continue;
-        //     auto p0 = points2d_0.at<cv::Vec2d>(i);
-        //     auto p1 = points2d_1.at<cv::Vec2d>(i);
-
-        //     cv::circle(img, cv::Point2d(p0[0], p0[1]), 5,
-        //                cv::Scalar(0, 255, 255), 3);
-        //     cv::circle(img, cv::Point2d(p1[0], p1[1]), 5,
-        //                cv::Scalar(255, 255, 0), 3);
-        // }
         cv::imwrite("out" + std::to_string(i) + "a.jpg", patch0_mos);
         cv::imwrite("out" + std::to_string(i) + "b.jpg", patch1_mos);
         cv::imwrite("out" + std::to_string(i) + "c.jpg", corr_mos);

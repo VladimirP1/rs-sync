@@ -4,7 +4,9 @@
 
 #include <vision/calibration.hpp>
 
-cv::Mat GetProjectionForUndistort(const FisheyeCalibration& calibration, bool projection = false);
+cv::Mat GetProjectionForUndistort(const FisheyeCalibration& calibration);
+
+cv::Mat_<double> ProjectionTo2d(const cv::Mat_<double>& in, double z0, double w0, double z1 = 1.);
 class Mosaic {
    public:
     Mosaic(const cv::Mat& output, int patch_size)
