@@ -1,69 +1,59 @@
+#include <chrono>
+#include <cmath>
+#include <fstream>
 #include <iostream>
+#include <string>
+#include <vector>
 
+#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/video/tracking.hpp>
+#include <opencv2/videoio.hpp>
 
-cv::Mat_<double> To2d(const cv::Mat_<double>& in, double z0, double w0, double z1 = 1.) {
-    cv::Mat_<double> out = cv::Mat::zeros(3, 3, CV_64F), tmp = cv::Mat::eye(3, 3, CV_64F);
-    in.colRange(0, 2).rowRange(0, 3).copyTo(out.colRange(0, 2));
-    double in33 = (in.rows == 4) ? in(3, 3) : 1.;
-    out(0, 2) = in(0, 2) * z0 / in33 / w0 + in(0, 3) / in33;
-    out(1, 2) = in(1, 2) * z0 / in33 / w0 + in(1, 3) / in33;
-    out(2, 2) = in(2, 2) * z0 / in33 / w0 + in(2, 3) / in33;
-    out.col(0) *= z1;
-    out.col(1) *= z1;
-    return out;
-}
+#include <vision/calibration.hpp>
+#include <vision/tracking.hpp>
+#include <vision/video_reader.hpp>
+#include <vision/camera_model.hpp>
+#include <vision/utils.hpp>
 
 int main() {
-    cv::Mat_<double> M, M2, a, b;
-    M = M.eye(3, 4);
-    a = a.zeros(4, 1);
-    b = b.zeros(3, 1);
+    VideoReader reader("141101AA.MP4");
+    reader.SetPosition(42e3);
 
-    M(0, 0) = M(1, 1) = 4;
-    M(2, 2) = 0;
-    M(0, 2) = 1;
+    FisheyeCalibration calibration;
+    std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
 
-    M2 = To2d(M, 3, 1, 3);
+    cv::Mat_<double> P = GetProjectionForUndistort(calibration);
+    P(0, 0) /= 2;
+    P(1, 1) /= 2;
 
-    a << 3, 0, 3, 1;
-    b << 3, 0, 3;
+    cv::Mat ud;
 
-    std::cout << M * a << std::endl;
-    std::cout << M2 * b << std::endl;
+    cv::fisheye::undistortImage(reader.Cur(),ud , calibration.CameraMatrix(), calibration.DistortionCoeffs(), P);
 
-    // clang-format off
-    // [0.06164850581705239, 0.5283549464772881, 1] [0.05050266826047095, 0.4585169960122493, 0.887195859881647]0.878125
+    cv::imwrite("out.jpg", ud);
 
-    // [0.999804621442821, -0.01371785247638156, 0.01423163606244407, -0.2761902532047023;
-    // 0.01371488552611079, 0.9999058996946497, 0.0003060569207003829, 0.4637303727511771;
-    // -0.01423449530483225, -0.0001108118642952015, 0.9998986782990301, -0.8418272301504489;
-    // 0, 0, 0, 1]
-    // clang-format on
+    for (int i = 0; i < 1000; i += 2) {
+        cv::Mat_<double> A;
+        cv::Point2d xy;
+        cv::Point2d uv{i * 4. + 2 * sin(i/10.) * 3., i * 3. - 2 * sin(i/10.) * 4.};
+        UndistortPointJacobian(uv, xy, A, calibration.CameraMatrix(),
+                               calibration.DistortionCoeffs());
 
-    M << 0.999804621442821, -0.01371785247638156, 0.01423163606244407, -0.2761902532047023,
-        0.01371488552611079, 0.9999058996946497, 0.0003060569207003829, 0.4637303727511771,
-        -0.01423449530483225, -0.0001108118642952015, 0.9998986782990301, -0.8418272301504489, 0, 0,
-        0, 1;
+        std::cout << P * A << xy << std::endl;
+        cv::Mat in = reader.Cur().clone(), out;
 
-    M2 = To2d(M, 0.878125, 1, 0.878125);
+        cv::circle(in, uv, 15, cv::Scalar(0, 0, 255), -1);
 
-    a << 0.05413509, 0.46396169, 0.878125, 1.;
-    // b << 0.6370416419567999, 0.0620748200224084, 1;
-    b << 0.06164850581705239, 0.5283549464772881, 1;
+        cv::warpPerspective(in, out, P * A, reader.Cur().size());
 
-    // a << 3, 3, .8, 1;
-    // b << 3, 3, 1;
+        cv::imwrite("out" + std::to_string(i) + ".jpg", out);
+        cv::imwrite("out" + std::to_string(i + 1) + ".jpg", ud);
 
-    cv::Mat_<double> ra = M * a;
-    cv::Mat_<double> ra2 = M2 * b;
-    // ra /= ra(2);
-    // ra2 /= ra2(2);
-
-    std::cout << ra << std::endl;
-    std::cout << ra2 << std::endl;
-
-    std::cout << M2 << std::endl;
+    }
 
     return 0;
 }
