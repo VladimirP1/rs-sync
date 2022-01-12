@@ -43,17 +43,19 @@ bool ExtractUndistortedPatch(const cv::Mat& image, cv::Mat& patch, cv::Point2d c
     }
 
     cv::Mat dpatch = image(roi);
+
     cv::Mat_<double> T = P.clone();
+    cv::Mat_<double> M = cv::Mat::eye(3, 3, CV_64F);
+    M.col(2) << (center.x - src_center.x), (center.y - src_center.y), 1.;
+    T = T * M;
 
     cv::Mat_<double> cp(3, 1, CV_64F);
     cp << src_center.x, src_center.y, 1;
 
-    cv::Mat_<double> M = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat_<double> v = -T * cp;
     v /= v(2);
-    M(0, 2) += dst_center.x - v(0);
-    M(1, 2) += dst_center.y - v(1);
-    std::cout << M.col(2) << std::endl;
+    M(0, 2) = dst_center.x - v(0);
+    M(1, 2) = dst_center.y - v(1);
     T = M * T;
 
     cv::warpPerspective(dpatch, patch, T(cv::Rect(0, 0, 3, 3)), dst_size, cv::INTER_CUBIC,
@@ -156,7 +158,7 @@ int main() {
             // cv::circle(img, dist1, 5, cv::Scalar(0, 255, 0), 3);
             // cv::circle(img, old_c[i], 5, cv::Scalar(255, 255, 255), 3);
 
-            // if (std::abs(dist0.x - 2000) > 1000 || std::abs(dist0.y - 1500) > 1000) continue; 
+            // if (std::abs(dist0.x - 2000) > 1000 || std::abs(dist0.y - 1500) > 1000) continue;
 
             cv::Mat P0_inv, P1_inv;
             cv::invert(To4x4(P1), P1_inv);
@@ -171,8 +173,8 @@ int main() {
 
             success &= ExtractUndistortedPatch(
                 reader.Cur(), upatch1, dist1,
-                P * ProjectionTo2d(P1_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort1, src_patch_size,
-                dst_patch_size);
+                P * ProjectionTo2d(P1_inv, points4d(2, i), points4d(3, i), 1.) * affineUndistort1,
+                src_patch_size, dst_patch_size);
 
             if (!success) continue;
 
