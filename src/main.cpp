@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     cv::Mat corr_mos = cv::Mat::zeros(800, 800, frame.type());
     cv::Mat patch_mos = cv::Mat::zeros(800, 800, frame.type());
     Mosaic mosaic(corr_mos, dst_patch_size * 2);
-    cv::Mat_<double> A, PS = P.clone();
+    cv::Mat_<double> A, AA, PS = P.clone();
     PS(0, 2) = PS(1, 2) = 0.;
     {
         Stopwatch stopwatch("Untistorting patches");
@@ -62,10 +62,19 @@ int main(int argc, char** argv) {
                                               static_cast<double>(patch_size)},
                          cv::Size(patch_size * 2, patch_size * 2)));
 
-            cv::Point2d xy;
+            cv::Point2d xy, dcenter;
             UndistortPointJacobian(center, xy, A, c.CameraMatrix(),
                                    c.DistortionCoeffs());
 
+            ProjectPointJacobian(cv::Point3d{xy.x*100, xy.y * 100, 100.}, dcenter, AA,
+                                 c.CameraMatrix(), c.DistortionCoeffs());
+
+            // AA.col(2) << 0,0,1;
+            // A.col(2) << 0,0,1;
+            // cv::invert(AA, AA);
+            cv::Mat_<double> m(3, 1, CV_64F);
+            m << xy.x, xy.y, 1.;
+            std::cout << AA << center << AA * m << dcenter << std::endl;
             // std::vector<cv::Point2d> upts, pts{center};
             // cv::fisheye::undistortPoints(pts, upts, c.CameraMatrix(),
             //                             c.DistortionCoeffs());
@@ -76,10 +85,10 @@ int main(int argc, char** argv) {
             cv::Mat_<double> cp(3, 1, CV_64F);
             cp << patch_size, patch_size, 1;
 
-            cv::Mat_<double> M = cv::Mat::eye(3,3,CV_64F);
+            cv::Mat_<double> M = cv::Mat::eye(3, 3, CV_64F);
             M.col(2) = -T * cp;
-            M(0,2) += dst_patch_size;
-            M(1,2) += dst_patch_size;
+            M(0, 2) += dst_patch_size;
+            M(1, 2) += dst_patch_size;
             T = M * T;
 
             cv::warpAffine(patch, result, T(cv::Rect(0, 0, 3, 2)),

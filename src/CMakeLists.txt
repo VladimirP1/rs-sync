@@ -46,6 +46,13 @@ target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(main ${OpenCV_LIBS})
 target_link_libraries(main libvision)
 
+# -----
+
+add_executable(t t.cpp)
+target_include_directories(t PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(t ${OpenCV_LIBS})
+target_link_libraries(t libvision)
+
 
 # --------------------------------------------------------------------------
 

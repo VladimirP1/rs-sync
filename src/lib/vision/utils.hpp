@@ -4,7 +4,7 @@
 
 #include <vision/calibration.hpp>
 
-cv::Mat GetProjectionForUndistort(const FisheyeCalibration& calibration);
+cv::Mat GetProjectionForUndistort(const FisheyeCalibration& calibration, bool projection = false);
 class Mosaic {
    public:
     Mosaic(const cv::Mat& output, int patch_size)
@@ -15,7 +15,7 @@ class Mosaic {
             return false;
         }
 
-        m.copyTo(out(cv::Rect(j, i, patch_size_, patch_size_)));
+        m.copyTo(out(cv::Rect(cv::Point(j, i), m.size())));
 
         return true;
     }
