@@ -78,7 +78,7 @@ cv::Point2d MinSubpixel(cv::Mat_<float> img) {
     double min;
     cv::Mat thresh;
     cv::minMaxLoc(img, &min);
-    cv::threshold(img, thresh, min + .05, 1., cv::THRESH_BINARY_INV);
+    cv::threshold(img, thresh, min * 2, 1., cv::THRESH_BINARY_INV);
     cv::Moments m = cv::moments(thresh, true);
     return {m.m10 / m.m00 + .5, m.m01 / m.m00 + .5};
 }
@@ -97,14 +97,12 @@ int main() {
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
     // std::ifstream("GoPro_Hero6_2160p_16by9_wide.json") >> calibration;
 
-    reader.SetPosition(42e3);
+    reader.SetPosition(120e3);
 
     tracker.InitCorners(reader.CurGray());
 
     cv::Mat_<double> P = GetProjectionForUndistort(calibration);
-    cv::Point2d shift{0, 0};
-    int processed = 0;
-    for (int i = 1; i < 100; ++i) {
+    for (int i = 1; i < 800; ++i) {
         reader.Advance();
         auto [old_c, new_c] = tracker.Track(reader.PrevGray(), reader.CurGray());
 
@@ -135,11 +133,15 @@ int main() {
         P1(cv::Range::all(), cv::Range(0, 3)) = R * 1.0;
         P1.col(3) = t * 1.0;
 
+        cv::Point2d shift{0, 0};
+        double sum = 0;
+        int processed = 0;
+        cv::Mat sum_ucorr;
         const cv::Size src_patch_size{25, 25};
         const cv::Size dst_patch_size{15, 15};
         const cv::Point2d src_patch_center{src_patch_size.width / 2., src_patch_size.height / 2.};
         const cv::Point2d dst_patch_center{dst_patch_size.width / 2., dst_patch_size.height / 2.};
-        cv::Mat corr_mos = cv::Mat::zeros(1080, 1920, CV_8UC3);
+        cv::Mat corr_mos = cv::Mat::zeros(800, 800, CV_8UC3);
         cv::Mat patch0_mos = cv::Mat::zeros(200, 800, CV_8UC3);
         cv::Mat patch1_mos = cv::Mat::zeros(200, 800, CV_8UC3);
         Mosaic mosaic(patch0_mos, dst_patch_size.width);
@@ -196,13 +198,35 @@ int main() {
             cv::Point2d minloc = MinSubpixel(ucorr);
             shift += minloc;
             ++processed;
+
+            // cv::Mat xucorr, yucorr;
+            // cv::Sobel(ucorr, xucorr, CV_32F, 1, 0);
+            // cv::Sobel(ucorr, yucorr, CV_32F, 0, 1);
+            // ucorr = xucorr * xucorr + yucorr * yucorr;
+
+            double min, max;
+            cv::minMaxLoc(ucorr, &min, &max);
+            sum += min;
+            ucorr -= min;
+            ucorr /= (max - min);
+
+            if (sum_ucorr.cols == 0) {
+                sum_ucorr = ucorr.clone();
+            } else {
+                sum_ucorr += ucorr;
+            }
+
             ucorr.convertTo(ucorr, CV_8UC1, 255);
+
             cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
 
-            cv::resize(ucorr, ucorr, ucorr.size() * 6);
+            cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_LINEAR);
 
-            cv::circle(ucorr, {ucorr.cols/2, ucorr.rows/2}, 1, cv::Scalar(0,255,0),1,cv::LINE_AA);
-            cv::circle(ucorr, minloc * 6, 2, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
+            cv::applyColorMap(ucorr, ucorr, cv::COLORMAP_MAGMA);
+
+            cv::circle(ucorr, {ucorr.cols / 2, ucorr.rows / 2}, 1, cv::Scalar(0, 255, 0), 1,
+                       cv::LINE_AA);
+            // cv::circle(ucorr, minloc * 6, 2, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
 
             mosaic.Add(patch0_mos, upatch0);
             mosaic.Add(patch1_mos, upatch1);
@@ -212,11 +236,26 @@ int main() {
             mosaic2.Advance();
         }
 
-        std::cout << shift / processed << std::endl;
+        std::cout << sum / processed << shift / processed << std::endl;
+
+        sum_ucorr /= processed;
+        sum_ucorr.convertTo(sum_ucorr, CV_8UC1, 255);
+        cv::cvtColor(sum_ucorr, sum_ucorr, cv::COLOR_GRAY2BGR);
+        cv::resize(sum_ucorr, sum_ucorr, sum_ucorr.size() * 6, 0, 0, cv::INTER_LINEAR);
+        cv::applyColorMap(sum_ucorr, sum_ucorr, cv::COLORMAP_MAGMA);
+        cv::circle(sum_ucorr, {sum_ucorr.cols / 2, sum_ucorr.rows / 2}, 1, cv::Scalar(0, 255, 0), 1,
+                   cv::LINE_AA);
+        mosaic2.Add(corr_mos, sum_ucorr);
+        mosaic2.Advance();
+        cv::resize(sum_ucorr,sum_ucorr,sum_ucorr.size()*4);
+        cv::Mat imgz = reader.Cur().clone();
+        sum_ucorr.copyTo(imgz(cv::Rect(cv::Point(0,0), sum_ucorr.size())));
+        sum_ucorr = cv::Mat{};
 
         cv::imwrite("out" + std::to_string(i) + "a.jpg", patch0_mos);
         cv::imwrite("out" + std::to_string(i) + "b.jpg", patch1_mos);
         cv::imwrite("out" + std::to_string(i) + "c.jpg", corr_mos);
+        cv::imwrite("out" + std::to_string(i) + ".jpg", imgz);
     }
 
     return 0;
