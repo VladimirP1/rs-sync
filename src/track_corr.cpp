@@ -37,6 +37,10 @@ bool ExtractUndistortedPatch(const cv::Mat& image, cv::Mat& patch, cv::Point2d c
     cv::Point2d dst_center{dst_size.width / 2., dst_size.height / 2.};
 
     auto roi = cv::Rect(center - src_center, src_size);
+
+    cv::Point2d actual_src_center =
+        center - cv::Point2d{static_cast<double>(roi.x), static_cast<double>(roi.y)};
+
     // std::cout << roi << std::endl;
     if (!RoiInSize(roi, image.size())) {
         return false;
@@ -46,16 +50,14 @@ bool ExtractUndistortedPatch(const cv::Mat& image, cv::Mat& patch, cv::Point2d c
 
     cv::Mat_<double> T = P.clone();
     cv::Mat_<double> M = cv::Mat::eye(3, 3, CV_64F);
-    M.col(2) << (center.x - src_center.x), (center.y - src_center.y), 1.;
+    M.col(2) << (center.x - actual_src_center.x), (center.y - actual_src_center.y), 1.;
     T = T * M;
 
     cv::Mat_<double> cp(3, 1, CV_64F);
     cp << src_center.x, src_center.y, 1;
-
     cv::Mat_<double> v = -T * cp;
-    v /= v(2);
-    M(0, 2) = dst_center.x - v(0);
-    M(1, 2) = dst_center.y - v(1);
+
+    M.col(2) << dst_center.x - v(0) / v(2), dst_center.y - v(1) / v(2), 1;
     T = M * T;
 
     cv::warpPerspective(dpatch, patch, T(cv::Rect(0, 0, 3, 3)), dst_size, cv::INTER_CUBIC,
@@ -63,15 +65,22 @@ bool ExtractUndistortedPatch(const cv::Mat& image, cv::Mat& patch, cv::Point2d c
     return true;
 }
 
-void MatchPatches(const cv::Mat& prev, const cv::Mat& next, cv::Mat& corr, cv::Size template_size) {
+void MatchPatches(const cv::Mat& prev, const cv::Mat& next, cv::Mat& corr, double margin) {
     cv::Mat f_prev, f_templ;
     prev.convertTo(f_prev, CV_32FC3);
-    cv::Mat templ = next(cv::Rect((next.cols - template_size.width) / 2.,
-                                  (next.rows - template_size.height) / 2., template_size.width,
-                                  template_size.height));
+    cv::Mat templ = next(cv::Rect(margin, margin, next.cols - 2 * margin, next.rows - 2 * margin));
     templ.convertTo(f_templ, CV_32FC3);
 
     cv::matchTemplate(f_prev, f_templ, corr, cv::TM_SQDIFF_NORMED);
+}
+
+cv::Point2d MinSubpixel(cv::Mat_<float> img) {
+    double min;
+    cv::Mat thresh;
+    cv::minMaxLoc(img, &min);
+    cv::threshold(img, thresh, min + .05, 1., cv::THRESH_BINARY_INV);
+    cv::Moments m = cv::moments(thresh, true);
+    return {m.m10 / m.m00 + .5, m.m01 / m.m00 + .5};
 }
 
 int main() {
@@ -93,8 +102,9 @@ int main() {
     tracker.InitCorners(reader.CurGray());
 
     cv::Mat_<double> P = GetProjectionForUndistort(calibration);
-
-    for (int i = 1; i < 800; ++i) {
+    cv::Point2d shift{0, 0};
+    int processed = 0;
+    for (int i = 1; i < 100; ++i) {
         reader.Advance();
         auto [old_c, new_c] = tracker.Track(reader.PrevGray(), reader.CurGray());
 
@@ -118,7 +128,7 @@ int main() {
 
         cv::Mat_<double> R, t, points4d;
         if (E.rows != 3 || E.cols != 3) continue;
-        cv::recoverPose(E, old_u, new_u, cv::Mat::eye(3, 3, CV_64F), R, t, 1000, mask, points4d);
+        cv::recoverPose(E, old_u, new_u, cv::Mat::eye(3, 3, CV_64F), R, t, 100000, mask, points4d);
 
         cv::Mat_<double> P0 = cv::Mat::eye(3, 4, R.type());
         cv::Mat_<double> P1(3, 4, R.type());
@@ -129,10 +139,11 @@ int main() {
         const cv::Size dst_patch_size{15, 15};
         const cv::Point2d src_patch_center{src_patch_size.width / 2., src_patch_size.height / 2.};
         const cv::Point2d dst_patch_center{dst_patch_size.width / 2., dst_patch_size.height / 2.};
-        cv::Mat corr_mos = cv::Mat::zeros(200, 800, CV_8UC3);
+        cv::Mat corr_mos = cv::Mat::zeros(1080, 1920, CV_8UC3);
         cv::Mat patch0_mos = cv::Mat::zeros(200, 800, CV_8UC3);
         cv::Mat patch1_mos = cv::Mat::zeros(200, 800, CV_8UC3);
         Mosaic mosaic(patch0_mos, dst_patch_size.width);
+        Mosaic mosaic2(corr_mos, dst_patch_size.width * 4);
         for (int i = 0; i < points4d.cols; ++i) {
             if (!mask[i]) continue;
 
@@ -178,22 +189,30 @@ int main() {
 
             if (!success) continue;
 
-            MatchPatches(upatch0, upatch1, ucorr, cv::Size(8, 8));
+            MatchPatches(upatch0, upatch1, ucorr, 4);
 
-            cv::Point minloc;
-            cv::minMaxLoc(ucorr, nullptr, nullptr, &minloc);
+            // ucorr = cv::Mat::ones(ucorr.size(), CV_32FC1);
+            // ucorr.at<float>(5, 5) = 0;
+            cv::Point2d minloc = MinSubpixel(ucorr);
+            shift += minloc;
+            ++processed;
             ucorr.convertTo(ucorr, CV_8UC1, 255);
             cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
-            ucorr.at<cv::Vec3b>(minloc.y, minloc.x) = {255, 255, 0};
 
-            ucorr.at<cv::Vec3b>(ucorr.rows / 2, ucorr.cols / 2) = {0, 255, 255};
+            cv::resize(ucorr, ucorr, ucorr.size() * 6);
+
+            cv::circle(ucorr, {ucorr.cols/2, ucorr.rows/2}, 1, cv::Scalar(0,255,0),1,cv::LINE_AA);
+            cv::circle(ucorr, minloc * 6, 2, cv::Scalar(0, 255, 255), 1, cv::LINE_AA);
 
             mosaic.Add(patch0_mos, upatch0);
             mosaic.Add(patch1_mos, upatch1);
-            mosaic.Add(corr_mos, ucorr);
+            mosaic2.Add(corr_mos, ucorr);
 
             mosaic.Advance();
+            mosaic2.Advance();
         }
+
+        std::cout << shift / processed << std::endl;
 
         cv::imwrite("out" + std::to_string(i) + "a.jpg", patch0_mos);
         cv::imwrite("out" + std::to_string(i) + "b.jpg", patch1_mos);
