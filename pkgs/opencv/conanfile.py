@@ -316,6 +316,11 @@ class OpenCVConan(ConanFile):
            # libavcodec;libavformat;libavutil;libswscale modules
            self._cmake.definitions["OPENCV_FFMPEG_USE_FIND_PACKAGE"] = "ffmpeg"
            self._cmake.definitions["OPENCV_INSTALL_FFMPEG_DOWNLOAD_SCRIPT"] = False
+           self._cmake.definitions["FFMPEG_libavcodec_VERSION"] = "54.35.0"
+           self._cmake.definitions["FFMPEG_libavformat_VERSION"] = "54.20.4"
+           self._cmake.definitions["FFMPEG_libavutil_VERSION"] = "52.3.0"
+           self._cmake.definitions["FFMPEG_libswscale_VERSION"] = "2.1.1"
+           self._cmake.definitions["FFMPEG_libavresample_VERSION"] = "1.0.1"
 
         self._cmake.definitions["WITH_GSTREAMER"] = False
         self._cmake.definitions["WITH_HALIDE"] = False

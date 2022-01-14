@@ -6,7 +6,7 @@ include(thirdparty/conan.cmake)
 
 
 set( CONAN_REQUIREMENTS
-    opencv/4.1.2@demo/testing
+    opencv/4.5.3@demo/testing
     eigen/3.3.8
     ceres-solver/2.0.0
     nlohmann_json/3.10.5

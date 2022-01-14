@@ -1,0 +1,8 @@
+[requires]
+eigen/3.3.8
+ceres-solver/2.0.0
+nlohmann_json/3.10.5
+[generators]
+cmake_find_package_multi
+[options]
+opencv:with_ffmpeg=True
