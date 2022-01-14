@@ -97,10 +97,12 @@ int main() {
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
     // std::ifstream("GoPro_Hero6_2160p_16by9_wide.json") >> calibration;
 
-    reader.SetPosition(120e3);
+    reader.SetPosition(10e3);
 
     tracker.InitCorners(reader.CurGray());
 
+    double total_error = 0;
+    int total_processed = 0;
     cv::Mat_<double> P = GetProjectionForUndistort(calibration);
     for (int i = 1; i < 800; ++i) {
         reader.Advance();
@@ -112,12 +114,12 @@ int main() {
         cv::fisheye::undistortPoints(new_c, new_u, calibration.CameraMatrix(),
                                      calibration.DistortionCoeffs(), cv::Mat::eye(3, 3, CV_32F));
 
-        constexpr double rs_cooef = .75;
-        for (int i = 0; i < old_c.size(); ++i) {
-            auto scale = (1 + (new_c[i].y - old_c[i].y) / reader.CurGray().rows * rs_cooef);
-            new_u[i].x = (new_u[i].x - old_u[i].x) / scale + old_u[i].x;
-            new_u[i].y = (new_u[i].y - old_u[i].y) / scale + old_u[i].y;
-        }
+        // constexpr double rs_cooef = .75;
+        // for (int i = 0; i < old_c.size(); ++i) {
+        //     auto scale = (1 + (new_c[i].y - old_c[i].y) / reader.CurGray().rows * rs_cooef);
+        //     new_u[i].x = (new_u[i].x - old_u[i].x) / scale + old_u[i].x;
+        //     new_u[i].y = (new_u[i].y - old_u[i].y) / scale + old_u[i].y;
+        // }
 
         std::vector<uchar> mask;
         if (old_u.size() < 5) continue;
@@ -237,6 +239,8 @@ int main() {
         }
 
         std::cout << sum / processed << shift / processed << std::endl;
+        total_processed += processed;
+        total_error += sum;
 
         sum_ucorr /= processed;
         sum_ucorr.convertTo(sum_ucorr, CV_8UC1, 255);
@@ -257,6 +261,7 @@ int main() {
         cv::imwrite("out" + std::to_string(i) + "c.jpg", corr_mos);
         cv::imwrite("out" + std::to_string(i) + ".jpg", imgz);
     }
+    std::cout << total_error / total_processed << std::endl;
 
     return 0;
 }

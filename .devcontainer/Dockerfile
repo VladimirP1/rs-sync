@@ -14,8 +14,10 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
      && apt-get -y install --no-install-recommends \
-     cmake libgoogle-glog-dev libgflags-dev libatlas-base-dev libeigen3-dev
+     cmake libgtk2.0-dev
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
      && apt-get -y install --no-install-recommends \
-     libopencv-dev
+     python3-pip
+
+RUN pip3 install conan
