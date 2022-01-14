@@ -20,9 +20,14 @@
 #include <vision/utils.hpp>
 
 int main() {
+
+    std::cout << cv::getBuildInformation() << std::endl;
+
     VideoReader reader("141101AA.MP4");
     reader.SetPosition(42e3);
 
+    cv::imwrite("out.png",reader.Cur());
+return 0;
     FisheyeCalibration calibration;
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
 
