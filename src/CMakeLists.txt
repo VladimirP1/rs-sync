@@ -45,7 +45,6 @@ install(TARGETS main)
 # -----
 
 add_executable(t t.cpp)
-target_link_libraries(t PUBLIC opencv::opencv)
 target_link_libraries(t libvision)
 install(TARGETS t)
 
@@ -54,6 +53,9 @@ add_executable(ceres_test ceres_test.cpp)
 target_link_libraries(ceres_test Ceres::ceres)
 install(TARGETS t)
 
+
+# tests
+add_subdirectory(test)
 
 
 # --------------------------------------------------------------------------

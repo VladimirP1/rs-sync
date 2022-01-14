@@ -1,6 +1,10 @@
+project(rs-sync)
+
 set(BUILD_SHARED_LIBS YES)
 SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+enable_testing()
 
 include(thirdparty/conan.cmake)
 
@@ -10,6 +14,7 @@ set( CONAN_REQUIREMENTS
     eigen/3.3.8
     ceres-solver/2.0.0
     nlohmann_json/3.10.5
+    catch2/2.13.8
 )
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
@@ -25,6 +30,5 @@ conan_cmake_install(PATH_OR_REFERENCE .
                     BUILD missing
                     REMOTE conancenter
                     SETTINGS ${settings})
-
 
 add_subdirectory(src)

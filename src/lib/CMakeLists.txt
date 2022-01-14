@@ -16,3 +16,10 @@ add_library(libio io/bb_csv.cpp)
 target_include_directories(libio PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(libio PUBLIC libmath)
 install(TARGETS libio)
+
+# -----
+
+add_library(libds ds/sync_context)
+target_include_directories(libds PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+target_link_libraries(libds PUBLIC libmath libvision)
+install(TARGETS libds)
