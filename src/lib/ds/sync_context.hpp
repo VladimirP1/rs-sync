@@ -52,16 +52,7 @@ class FrameContext {
 
     double CornerDropThreshold() const { return corner_drop_threshold_; }
 
-    void SetCachedFrame(cv::Mat frame) {
-        cached_frame_ = frame;
-    }
-
-    cv::Mat CachedFrame() const {
-        return cached_frame_;
-    }
-
    private:
-    cv::Mat cached_frame_;
     double corner_drop_threshold_;
     std::vector<cv::Point2d> corners_;
     std::vector<std::shared_ptr<MatchContext>> matched_;

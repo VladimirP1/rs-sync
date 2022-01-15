@@ -26,7 +26,7 @@ install(TARGETS libds)
 
 # -----
 
-add_library(libbl bl/async_frame_loader.cpp)
-target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(libbl PUBLIC libds)
-install(TARGETS libbl)
+# add_library(libbl bl/async_frame_loader.cpp)
+# target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+# target_link_libraries(libbl PUBLIC libds)
+# install(TARGETS libbl)

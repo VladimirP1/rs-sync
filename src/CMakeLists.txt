@@ -43,7 +43,7 @@ install(TARGETS main)
 # -----
 
 add_executable(t t.cpp)
-target_link_libraries(t libds libbl)
+target_link_libraries(t libds)
 install(TARGETS t)
 
 # -----
