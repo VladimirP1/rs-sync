@@ -1,13 +1,14 @@
 project(rs-sync)
 
 set(BUILD_SHARED_LIBS YES)
-SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 enable_testing()
 
 include(thirdparty/conan.cmake)
-
 
 set( CONAN_REQUIREMENTS
     opencv/4.5.3@demo/testing
@@ -23,6 +24,7 @@ list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 conan_cmake_configure(REQUIRES ${CONAN_REQUIREMENTS}
                       GENERATORS cmake_find_package_multi
                       OPTIONS opencv:with_ffmpeg=True
+                      SETTINGS build_type=Release
                     )
 conan_cmake_autodetect(settings)
 

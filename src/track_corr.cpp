@@ -86,7 +86,7 @@ cv::Point2d MinSubpixel(cv::Mat_<float> img) {
 int main() {
     // VideoReader reader("GX019642.MP4");
     // VideoReader reader("VID_20220110_135451.mp4");
-    VideoReader reader("141101AA.MP4");
+    VideoReader reader("000021AA.MP4");
     // VideoReader reader("193653AA.MP4");
 
     TrackerImpl tracker(50, 700);

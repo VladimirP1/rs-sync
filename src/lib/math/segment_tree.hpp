@@ -10,6 +10,8 @@ class SegmentTree {
    public:
     typedef G group_type;
 
+    SegmentTree() {}
+
     template <typename I,
               std::enable_if_t<
                   std::is_same<typename std::iterator_traits<I>::value_type,
@@ -26,7 +28,7 @@ class SegmentTree {
         BuildImpl(begin, end, 1, 0, data_size_ - 1);
     }
 
-    typename G::value_type Query(ssize_t l, ssize_t r) {
+    typename G::value_type Query(ssize_t l, ssize_t r) const {
         assert(l >= 0 && l < data_size_);
         assert(r >= 0 && r < data_size_);
 
@@ -36,7 +38,7 @@ class SegmentTree {
    protected:
     G group_;
 
-    typename G::value_type QueryImpl(size_t l, size_t r) {
+    typename G::value_type QueryImpl(size_t l, size_t r) const {
         return QueryImpl(1, 0, data_size_ - 1, l, r);
     }
 

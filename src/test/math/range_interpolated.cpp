@@ -11,6 +11,10 @@
 TEMPLATE_TEST_CASE("Interpolated<T> queries with different underlying data structures", "",
                    PrefixSums<DefaultGroup<double>>, SegmentTree<DefaultGroup<double>>) {
     using TestedType = Interpolated<TestType>;
+    SECTION("Can be created with no data") {
+        TestedType t;
+        REQUIRE(t.SoftQuery(-.1, .1) == 0);
+    }
     SECTION("Can be created on empty data") {
         std::vector<double> data;
         TestedType t{data.begin(), data.end()};

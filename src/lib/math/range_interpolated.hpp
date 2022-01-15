@@ -10,6 +10,8 @@ class Interpolated : public Base {
     typedef typename Base::group_type G;
 
    public:
+    Interpolated() : Base() {}
+
     template <typename I,
               std::enable_if_t<
                   std::is_same<typename std::iterator_traits<I>::value_type,
@@ -19,7 +21,7 @@ class Interpolated : public Base {
         data_size_ = std::distance(begin, end);
     }
 
-    typename G::value_type SoftQuery(double l, double r) {
+    typename G::value_type SoftQuery(double l, double r) const {
         typename G::value_type ret = Base::group_.unit();
         l = std::min(std::max(l, 0.), static_cast<double>(data_size_));
         r = std::min(std::max(r, 0.), static_cast<double>(data_size_));
@@ -52,7 +54,7 @@ class Interpolated : public Base {
     }
 
    private:
-    typename G::value_type SubQuery(double l, double r) {
+    typename G::value_type SubQuery(double l, double r) const {
         if (l == r) return Base::group_.unit();
         double base;
         if (std::fabs(l - std::round(l)) > std::fabs(r - std::round(r))) {

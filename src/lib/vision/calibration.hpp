@@ -13,12 +13,14 @@ class FisheyeCalibration {
     double Rmse() const;
 
     int Width() const;
-    
+
     int Height() const;
 
     cv::Mat CameraMatrix() const;
 
     cv::Mat DistortionCoeffs() const;
+
+    bool IsLoaded() const;
 
    private:
     std::string name_;
@@ -26,7 +28,7 @@ class FisheyeCalibration {
     int width_{0}, height_{0};
     cv::Mat cameraMatrix_{cv::Mat::eye(3, 3, CV_64F)};
     cv::Mat distCoeffs_{cv::Mat::zeros(4, 1, CV_64F)};
+    bool isLoaded_{false};
 
-    friend std::istream& operator>>(std::istream& s,
-                                    FisheyeCalibration& calibration);
+    friend std::istream& operator>>(std::istream& s, FisheyeCalibration& calibration);
 };

@@ -8,8 +8,6 @@ find_package(nlohmann_json REQUIRED)
 
 # ceres
 find_package(Ceres REQUIRED)
-find_package(Eigen3 REQUIRED)
-
 
 # own lib
 add_subdirectory(lib)
@@ -45,7 +43,7 @@ install(TARGETS main)
 # -----
 
 add_executable(t t.cpp)
-target_link_libraries(t libvision)
+target_link_libraries(t libds libbl)
 install(TARGETS t)
 
 # -----

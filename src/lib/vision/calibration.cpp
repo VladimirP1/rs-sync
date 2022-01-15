@@ -18,6 +18,8 @@ cv::Mat FisheyeCalibration::CameraMatrix() const { return cameraMatrix_; }
 
 cv::Mat FisheyeCalibration::DistortionCoeffs() const { return distCoeffs_; }
 
+bool FisheyeCalibration::IsLoaded() const { return isLoaded_; }
+
 std::istream& operator>>(std::istream& s, FisheyeCalibration& calibration) {
     nlohmann::json json;
     s >> json;
@@ -121,6 +123,7 @@ std::istream& operator>>(std::istream& s, FisheyeCalibration& calibration) {
         calibration.height_ = tmp_height;
         calibration.cameraMatrix_ = tmp_cameraMatrix;
         calibration.distCoeffs_ = tmp_distCoeffs;
+        calibration.isLoaded_ = true;
     }
 
     return s;
