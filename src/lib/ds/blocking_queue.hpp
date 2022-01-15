@@ -1,3 +1,4 @@
+#pragma once
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -55,16 +56,40 @@ template <class T>
 class BlockingMulticastQueue {
    public:
     struct Subscription {
-        bool Dequeue(T& elem) { return my_queue_->Dequeue(elem); }
+        Subscription() {}
 
-        ~Subscription() {
-            std::unique_lock<std::mutex> lock{ptr_->queue_mutex_};
-            auto it = std::find_if(ptr_->queues_.begin(), ptr_->queues_.end(),
-                                   [this](const auto& ptr) { return ptr.get() == my_queue_; });
-            ptr_->queues_.erase(it);
+        Subscription(Subscription&& s) : ptr_{std::move(s.ptr_)} {
+            s.my_queue_ = nullptr;
+            my_queue_ = s.my_queue_;
         }
 
+        Subscription& operator=(Subscription&& s) {
+            Deregister();
+            ptr_ = s.ptr_;
+            my_queue_ = s.my_queue_;
+            s.my_queue_ = nullptr;
+            return *this;
+        }
+
+        bool Enqueue(T elem) {
+            if (!my_queue_) {
+                return false;
+            }
+            return my_queue_->Enqueue(elem);
+        }
+
+        bool Dequeue(T& elem) {
+            if (!my_queue_) {
+                return false;
+            }
+            return my_queue_->Dequeue(elem);
+        }
+
+        ~Subscription() { Deregister(); }
+
        private:
+        Subscription(const Subscription&) = delete;
+        Subscription& operator=(const Subscription&) = delete;
         Subscription(std::shared_ptr<BlockingMulticastQueue<T>> ptr) : ptr_{ptr} {
             std::unique_lock<std::mutex> lock{ptr_->queue_mutex_};
             my_queue_ = new BlockingQueue<T>();
@@ -77,8 +102,18 @@ class BlockingMulticastQueue {
             ptr_->queues_.emplace_back(my_queue_);
         }
 
-        std::shared_ptr<BlockingMulticastQueue<T>> ptr_;
-        BlockingQueue<T>* my_queue_;
+        void Deregister() {
+            if (!my_queue_) {
+                return;
+            }
+            std::unique_lock<std::mutex> lock{ptr_->queue_mutex_};
+            auto it = std::find_if(ptr_->queues_.begin(), ptr_->queues_.end(),
+                                   [this](const auto& ptr) { return ptr.get() == my_queue_; });
+            ptr_->queues_.erase(it);
+        }
+
+        std::shared_ptr<BlockingMulticastQueue<T>> ptr_{};
+        BlockingQueue<T>* my_queue_{};
 
         friend class BlockingMulticastQueue<T>;
     };
@@ -128,6 +163,9 @@ class BlockingMulticastQueue {
 
    private:
     BlockingMulticastQueue() {}
+    BlockingMulticastQueue(const BlockingMulticastQueue&) = delete;
+    BlockingMulticastQueue& operator=(const BlockingMulticastQueue&) = delete;
+
     std::vector<std::unique_ptr<BlockingQueue<T>>> queues_;
     std::mutex queue_mutex_{};
     std::weak_ptr<BlockingMulticastQueue<T>> self_ptr_{};
