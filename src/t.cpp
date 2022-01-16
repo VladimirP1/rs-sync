@@ -6,7 +6,8 @@
 #include <ds/sync_context.hpp>
 #include <ds/blocking_queue.hpp>
 #include <bl/message_types.hpp>
-#include <bl/frame_cache.hpp>
+#include <bl/frame_loader.hpp>
+#include <bl/keypoint_detector.hpp>
 
 class SyncController {
     using EventQueueT = BlockingMulticastQueue<std::shared_ptr<Message>>;
@@ -41,34 +42,34 @@ int main() {
     std::shared_ptr<EventQueueT> event_bus{EventQueueT::Create()};
 
     SyncController controller{event_bus};
-    std::thread z0, z1;
-    {
-        std::atomic_bool ok{false};
-        std::thread t([&event_bus, &ok]() {
-            auto loader = FrameLoader::Create(event_bus, "141101AA.MP4");
-            ok = true;
-            loader->Run();
-        });
-        while (!ok)
-            ;
-        z0 = std::move(t);
-    }
+    std::vector<std::thread> threads;
 
     {
         std::atomic_bool ok{false};
-        std::thread t([&event_bus, &ok]() {
+        threads.emplace_back([&event_bus, &ok]() {
             auto loader = FrameLoader::Create(event_bus, "141101AA.MP4");
             ok = true;
             loader->Run();
         });
         while (!ok)
             ;
-        z1 = std::move(t);
+    }
+
+    for(int i = 0;i < 10; ++i){
+        std::atomic_bool ok{false};
+        threads.emplace_back([&event_bus, &ok]() {
+            auto detector = KeypointDetector::Create(event_bus);
+            ok = true;
+            detector->Run();
+        });
+        while (!ok)
+            ;
     }
 
     for (int j = 0; j < 10; ++j) {
         for (int i = 0; i < 3; ++i) {
             event_bus->Enqueue(std::make_shared<LoadFrameTaskMessage>(i + 20 * j));
+            event_bus->Enqueue(std::make_shared<DetectKeypointsTaskMessage>(i + 20 * j));
         }
     }
 

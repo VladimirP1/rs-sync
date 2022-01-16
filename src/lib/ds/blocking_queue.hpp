@@ -35,6 +35,11 @@ class BlockingQueue {
         return true;
     }
 
+    size_t Size() {
+        std::unique_lock<std::mutex> lock{queue_mutex_};
+        return queue_.size();
+    }
+
     void Terminate() {
         terminate_ = true;
         queue_cv_.notify_all();
@@ -83,6 +88,13 @@ class BlockingMulticastQueue {
                 return false;
             }
             return my_queue_->Dequeue(elem);
+        }
+
+        size_t Size() {
+            if (!my_queue_) {
+                return {};
+            }
+            return my_queue_->Size();
         }
 
         ~Subscription() { Deregister(); }

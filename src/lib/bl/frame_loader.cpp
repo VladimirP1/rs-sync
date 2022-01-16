@@ -1,10 +1,8 @@
-#include "frame_cache.hpp"
+#include "frame_loader.hpp"
 
 #include <opencv2/videoio.hpp>
 
 #include <ds/lru_cache.hpp>
-
-#include <iostream>
 
 class FrameLoaderImpl : public FrameLoader {
     static constexpr size_t kCacheSize = 128;
@@ -48,8 +46,7 @@ void FrameLoaderImpl::ProcessTask(FrameLoaderTaskMessage* msg) {
         auto desired_frame = load_message->Frame();
         if (auto maybe_frame = cache_.get(desired_frame); maybe_frame) {
             auto& [ts, frame] = maybe_frame.value();
-            message_queue_->Enqueue(
-                std::make_shared<LoadResultMessage>(desired_frame, ts, frame));
+            message_queue_->Enqueue(std::make_shared<LoadResultMessage>(desired_frame, ts, frame));
         } else {
             cv::Mat frame;
             if (desired_frame != cur_frame_) {
@@ -57,7 +54,8 @@ void FrameLoaderImpl::ProcessTask(FrameLoaderTaskMessage* msg) {
             }
             double cur_timestamp_ = desired_frame / fps_;
             if (cap_.read(frame)) {
-                message_queue_->Enqueue(std::make_shared<LoadResultMessage>(desired_frame, cur_timestamp_, frame));
+                message_queue_->Enqueue(
+                    std::make_shared<LoadResultMessage>(desired_frame, cur_timestamp_, frame));
                 cache_.put(desired_frame, {cur_timestamp_, frame});
                 cur_frame_ = desired_frame + 1;
             } else {

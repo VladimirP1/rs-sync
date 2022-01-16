@@ -30,10 +30,13 @@ class Message {
 class TaskMessage : public Message {};
 
 class FrameLoaderTaskMessage : public TaskMessage {};
+class KeypointDetectorTaskMessage : public TaskMessage {};
+
 
 class EventMessage : public Message {};
 
 class FrameLoaderEventMessage : public EventMessage {};
+class KeypointDetectorEventMessage : public EventMessage {};
 
 using MessageQueueT = BlockingMulticastQueue<std::shared_ptr<Message>>;
 using MessageQueuePtr = std::shared_ptr<MessageQueueT>;
