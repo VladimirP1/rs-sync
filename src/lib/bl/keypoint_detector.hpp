@@ -1,12 +1,13 @@
 #pragma once
+#include "component.hpp"
+
 #include <memory>
 #include <string>
 #include <vector>
 
 #include <opencv2/core.hpp>
 
-#include <bl/message_types.hpp>
-
+namespace rssync {
 struct DetectKeypointsTaskMessage : public KeypointDetectorTaskMessage {
     DetectKeypointsTaskMessage(int frame) : frame_{frame} {}
 
@@ -39,17 +40,9 @@ struct KeypointsDetectedMessage : public KeypointDetectorEventMessage {
     std::vector<cv::Point2f> pts_;
 };
 
-class KeypointDetector {
-   public:
-    KeypointDetector() {}
-    KeypointDetector(const KeypointDetector&) = delete;
-    KeypointDetector(KeypointDetector&&) = delete;
-    KeypointDetector& operator=(const KeypointDetector&) = delete;
-    KeypointDetector& operator=(KeypointDetector&&) = delete;
+std::shared_ptr<BaseComponent> RegisterKeypointDetector(std::shared_ptr<IContext> ctx, std::string name, size_t max_queue);
 
-    static std::shared_ptr<KeypointDetector> Create(MessageQueuePtr queue);
+constexpr const char * kKeypointDetectorName = "KeypointDetector";
 
-    virtual void Run() = 0;
 
-    virtual ~KeypointDetector();
-};
+}  // namespace rssync

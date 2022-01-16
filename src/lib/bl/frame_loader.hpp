@@ -1,11 +1,13 @@
 #pragma once
+#include "component.hpp"
+
 #include <memory>
 #include <string>
 
 #include <opencv2/core.hpp>
 
-#include <bl/message_types.hpp>
 
+namespace rssync {
 struct LoadFrameTaskMessage : public FrameLoaderTaskMessage {
     LoadFrameTaskMessage(int frame) : frame_{frame} {}
 
@@ -28,7 +30,8 @@ struct LoadResultMessage : public FrameLoaderEventMessage {
     cv::Mat Image() { return image_; }
 
     std::string ToString() const override {
-        return "[Event] Frame " + std::to_string(frame_) + " at " + std::to_string(timestamp_) + " loaded";
+        return "[Event] Frame " + std::to_string(frame_) + " at " + std::to_string(timestamp_) +
+               " loaded";
     }
 
    private:
@@ -37,17 +40,14 @@ struct LoadResultMessage : public FrameLoaderEventMessage {
     cv::Mat image_;
 };
 
-class FrameLoader {
+void RegisterFrameLoader(std::shared_ptr<IContext> ctx, std::string name, size_t max_queue, std::string filename);
+class FrameLoader : public BaseComponent {
    public:
-    FrameLoader() {}
-    FrameLoader(const FrameLoader&) = delete;
-    FrameLoader(FrameLoader&&) = delete;
-    FrameLoader& operator=(const FrameLoader&) = delete;
-    FrameLoader& operator=(FrameLoader&&) = delete;
+    virtual void ContextLoaded(std::string name, std::weak_ptr<BaseComponent> self,
+                               std::weak_ptr<IContext> ctx);
 
-    static std::shared_ptr<FrameLoader> Create(MessageQueuePtr queue, std::string filename);
-
-    virtual void Run() = 0;
-
-    virtual ~FrameLoader();
+   private:
 };
+
+constexpr const char * kFrameLoaderName = "FrameLoader";
+}  // namespace rssync

@@ -1,105 +1,120 @@
 #include "keypoint_detector.hpp"
 #include "frame_loader.hpp"
+#include "component.hpp"
 
-#include <set>
+
+#include <iostream>
+#include <vector>
+#include <thread>
 
 #include <opencv2/video/tracking.hpp>
 
-#include <iostream>
-
-class KeypointDetectorImpl : public KeypointDetector {
+namespace rssync {
+class KeypointDetectorImpl : public BaseComponent {
    public:
-    KeypointDetectorImpl(MessageQueuePtr queue);
+    KeypointDetectorImpl();
 
-    void Run() override;
+    void Run();
+
+    void Worker();
+
+    ~KeypointDetectorImpl();
 
    private:
-    void SendFrameRequestForTask(std::shared_ptr<Message>);
+    void ContextLoaded(std::weak_ptr<BaseComponent> self, std::weak_ptr<IContext> ctx) override;
 
-    void ProcessEvent(FrameLoaderEventMessage* msg);
+    void ProcessEvent(std::string name, int frame, cv::Mat img);
 
    private:
-    MessageQueueT::Subscription subscription_;
-    MessageQueuePtr message_queue_;
+    std::vector<std::thread> threads_;
 
-    std::deque<std::shared_ptr<Message>> tasks_;
-    std::deque<std::shared_ptr<Message>> events_;
-    std::set<int> taken_frames_;
+    BlockingQueue<std::pair<std::string, int>> work_;
+    std::shared_ptr<BlockingMulticastQueue<std::pair<int, cv::Mat>>> imgs_ =
+        BlockingMulticastQueue<std::pair<int, cv::Mat>>::Create();
 
     int min_corners_{70};
     int max_corners_{700};
     double discard_threshold_{1e-3};
 };
 
-KeypointDetectorImpl::KeypointDetectorImpl(MessageQueuePtr queue) : message_queue_{queue} {
-    subscription_ = message_queue_->Subscribe();
-}
+KeypointDetectorImpl::KeypointDetectorImpl() {}
 
-void KeypointDetectorImpl::SendFrameRequestForTask(std::shared_ptr<Message> msg) {
-    if (auto task = dynamic_cast<DetectKeypointsTaskMessage*>(msg.get()); task && task->Take()) {
-        taken_frames_.insert(task->Frame());
-        message_queue_->Enqueue(std::make_shared<LoadFrameTaskMessage>(task->Frame()));
+void KeypointDetectorImpl::ContextLoaded(std::weak_ptr<BaseComponent> self,
+                                         std::weak_ptr<IContext> ctx) {
+    for (int i = 0; i < 32; ++i) {
+        threads_.emplace_back(&KeypointDetectorImpl::Worker, this);
     }
-}
-
-void KeypointDetectorImpl::ProcessEvent(FrameLoaderEventMessage* msg) {
-    if (auto event = dynamic_cast<LoadResultMessage*>(msg); event && event->Take()) {
-        cv::Mat img;
-        cv::cvtColor(event->Image(), img, cv::COLOR_BGR2GRAY);
-
-        std::cout << img.cols << std::endl;
-
-        std::vector<cv::Point2f> corners;
-        int minDist = std::sqrt(img.rows * img.cols / 3 / max_corners_);
-        cv::goodFeaturesToTrack(img, corners, max_corners_, discard_threshold_, minDist);
-        if (corners.size() > 0) {
-            cv::cornerSubPix(
-                img, corners, cv::Size(10, 10), cv::Size(-1, -1),
-                cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20, .03));
-        }
-
-        message_queue_->Enqueue(
-            std::make_shared<KeypointsDetectedMessage>(event->Frame(), std::move(corners)));
-    }
+    threads_.emplace_back(&KeypointDetectorImpl::Run, this);
 }
 
 void KeypointDetectorImpl::Run() {
-    std::shared_ptr<Message> message;
-    while (subscription_.Dequeue(message)) {
-        if (auto task = dynamic_cast<KeypointDetectorTaskMessage*>(message.get()); task) {
-            tasks_.push_back(message);
-        } else if (auto event = dynamic_cast<FrameLoaderEventMessage*>(message.get()); event) {
-            events_.push_back(message);
+    std::shared_ptr<Message> msg;
+    while (Inbox().Dequeue(msg)) {
+        auto sctx = ctx_.lock();
+        auto loader_comp =
+            sctx ? sctx->GetComponent(rssync::kFrameLoaderName) : std::shared_ptr<BaseComponent>{};
+        if (!loader_comp) {
+            return;
         }
-        int i = 0;
-        for (auto it = tasks_.begin(); it != tasks_.end() && i < 3; ++i) {
-            auto task = dynamic_cast<DetectKeypointsTaskMessage*>(it->get());
-            if (task && task->Take()) {
-                taken_frames_.insert(task->Frame());
-                message_queue_->Enqueue(std::make_shared<LoadFrameTaskMessage>(task->Frame()));
-                ++it;
-            } else if (taken_frames_.count(task->Frame())) {
-                ++it;
-            } else {
-                it = tasks_.erase(it);
-                continue;
-            }
-        }
-        for (auto evit = events_.begin(); evit != events_.end();) {
-            if (auto event = dynamic_cast<LoadResultMessage*>(message.get());
-                event && taken_frames_.count(event->Frame())) {
-                ProcessEvent(event);
-                evit = events_.erase(evit);
-                taken_frames_.erase(event->Frame());
-            } else {
-                ++evit;
-            }
+        if (auto task = dynamic_cast<DetectKeypointsTaskMessage*>(msg.get()); task) {
+            work_.Enqueue({task->ReplyTo(), task->Frame()});
+            loader_comp->Inbox().Enqueue(MakeMessage<LoadFrameTaskMessage>(name_, task->Frame()));
+        } else if (auto event = dynamic_cast<LoadResultMessage*>(msg.get()); event) {
+            imgs_->Enqueue({event->Frame(), event->Image()});
         }
     }
 }
 
-std::shared_ptr<KeypointDetector> KeypointDetector::Create(MessageQueuePtr queue) {
-    return std::make_shared<KeypointDetectorImpl>(queue);
+void KeypointDetectorImpl::Worker() {
+    std::pair<std::string, int> my_frame;
+    auto sub = imgs_->Subscribe();
+    while (work_.Dequeue(my_frame)) {
+        std::pair<int, cv::Mat> data;
+        while (sub.Dequeue(data)) {
+            if (data.first == my_frame.second) break;
+        }
+        std::cout << "processing" << data.first << std::endl;
+        ProcessEvent(my_frame.first, my_frame.second, data.second);
+                std::cout << "ok" << data.first << std::endl;
+
+    }
+}
+void KeypointDetectorImpl::ProcessEvent(std::string reply_name, int frame, cv::Mat src) {
+    auto sctx = ctx_.lock();
+    auto reply_comp = sctx ? sctx->GetComponent(reply_name) : std::shared_ptr<BaseComponent>{};
+    if (!reply_comp) {
+        return;
+    }
+
+    cv::Mat img;
+    cv::cvtColor(src, img, cv::COLOR_BGR2GRAY);
+    // std::cout << img.cols << std::endl;
+
+    std::vector<cv::Point2f> corners;
+    int minDist = std::sqrt(img.rows * img.cols / 3 / max_corners_);
+    cv::goodFeaturesToTrack(img, corners, max_corners_, discard_threshold_, minDist);
+    if (corners.size() > 0) {
+        cv::cornerSubPix(
+            img, corners, cv::Size(10, 10), cv::Size(-1, -1),
+            cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20, .03));
+    }
+
+    reply_comp->Inbox().Enqueue(
+        std::make_shared<KeypointsDetectedMessage>(frame, std::move(corners)));
 }
 
-KeypointDetector::~KeypointDetector() {}
+KeypointDetectorImpl::~KeypointDetectorImpl() {
+    Inbox().Terminate();
+    work_.Terminate();
+    imgs_->Terminate();
+    for (auto& t : threads_) {
+        t.join();
+    }
+}
+
+std::shared_ptr<BaseComponent> RegisterKeypointDetector(std::shared_ptr<IContext> ctx,
+                                                        std::string name, size_t max_queue) {
+    return RegisterComponentLimited<KeypointDetectorImpl>(ctx, name, max_queue);
+}
+
+}  // namespace rssync

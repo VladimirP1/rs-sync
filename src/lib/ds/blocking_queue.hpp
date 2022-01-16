@@ -14,46 +14,61 @@ class BlockingQueue {
     BlockingQueue& operator=(const BlockingQueue& other) = delete;
 
     bool Enqueue(T elem) {
+        std::unique_lock<std::mutex> lock{mutex_};
+        while (max_size_ && queue_.size() == max_size_) {
+            queue_non_full_.wait(lock);
+        }
         if (terminate_ || sealed_) return false;
-        std::unique_lock<std::mutex> lock{queue_mutex_};
         queue_.push_back(elem);
         if (queue_.size() == 1) {
-            queue_cv_.notify_one();
+            queue_non_empty_.notify_one();
         }
         return true;
     }
 
     bool Dequeue(T& elem) {
-        std::unique_lock<std::mutex> lock{queue_mutex_};
+        std::unique_lock<std::mutex> lock{mutex_};
         while (queue_.empty() && !terminate_ && !sealed_) {
-            queue_cv_.wait(lock);
+            queue_non_empty_.wait(lock);
         }
         if (terminate_) return false;
         if (queue_.empty()) return false;
         elem = std::move(queue_.front());
         queue_.pop_front();
+        if (queue_.size() + 1 == max_size_) {
+            queue_non_full_.notify_all();
+        }
         return true;
     }
 
     size_t Size() {
-        std::unique_lock<std::mutex> lock{queue_mutex_};
+        std::unique_lock<std::mutex> lock{mutex_};
         return queue_.size();
+    }
+
+    void SetMaxSize(size_t max_size) {
+        std::unique_lock<std::mutex> lock{mutex_};
+        max_size_ = max_size;
     }
 
     void Terminate() {
         terminate_ = true;
-        queue_cv_.notify_all();
+        queue_non_empty_.notify_all();
+        queue_non_full_.notify_all();
     }
 
     void Seal() {
         sealed_ = true;
-        queue_cv_.notify_all();
+        queue_non_empty_.notify_all();
+        queue_non_full_.notify_all();
     }
 
    private:
+    size_t max_size_{};
     std::deque<T> queue_{};
-    std::condition_variable queue_cv_{};
-    std::mutex queue_mutex_{};
+    std::condition_variable queue_non_empty_{};
+    std::condition_variable queue_non_full_{};
+    std::mutex mutex_{};
     std::atomic_bool terminate_{}, sealed_{};
 };
 

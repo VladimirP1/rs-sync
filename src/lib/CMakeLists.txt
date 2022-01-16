@@ -26,7 +26,7 @@ install(TARGETS libds)
 
 # -----
 
-add_library(libbl bl/frame_loader.cpp bl/keypoint_detector.cpp)
+add_library(libbl bl/frame_loader.cpp bl/context.cpp bl/keypoint_detector.cpp)
 target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(libbl PUBLIC libds)
 install(TARGETS libbl)
