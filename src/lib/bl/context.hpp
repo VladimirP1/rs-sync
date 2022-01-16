@@ -15,7 +15,7 @@ class IContext {
 
     template <class T>
     std::shared_ptr<T> GetComponent(std::string name) {
-        return dynamic_pointer_cast<T>(GetComponent(name));
+        return std::dynamic_pointer_cast<T>(GetComponent(name));
     }
 
    private:

@@ -32,7 +32,7 @@ std::shared_ptr<BaseComponent> ContextImpl::GetComponent(std::string name) {
 void ContextImpl::ContextLoaded() {
     auto self = self_.lock();
     for (auto& [k, v] : id_to_ptr_) {
-        v->ContextLoaded(v, self);
+        v->ContextLoaded(v);
     }
 }
 

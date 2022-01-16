@@ -21,7 +21,7 @@ class KeypointDetectorImpl : public BaseComponent {
     ~KeypointDetectorImpl();
 
    private:
-    void ContextLoaded(std::weak_ptr<BaseComponent> self, std::weak_ptr<IContext> ctx) override;
+    void ContextLoaded(std::weak_ptr<BaseComponent> self) override;
 
     void ProcessEvent(std::string name, int frame, cv::Mat img);
 
@@ -39,8 +39,7 @@ class KeypointDetectorImpl : public BaseComponent {
 
 KeypointDetectorImpl::KeypointDetectorImpl() {}
 
-void KeypointDetectorImpl::ContextLoaded(std::weak_ptr<BaseComponent> self,
-                                         std::weak_ptr<IContext> ctx) {
+void KeypointDetectorImpl::ContextLoaded(std::weak_ptr<BaseComponent> self) {
     for (int i = 0; i < 32; ++i) {
         threads_.emplace_back(&KeypointDetectorImpl::Worker, this);
     }
