@@ -26,7 +26,7 @@ class Interpolated : public Base {
         l = std::min(std::max(l, 0.), static_cast<double>(data_size_));
         r = std::min(std::max(r, 0.), static_cast<double>(data_size_));
 
-        if (l >= r) return Base::group_.unit();
+        if (l >= r || data_size_ == 0) return Base::group_.unit();
 
         double disc_l = std::ceil(l);
         double disc_r = std::floor(r);
@@ -73,5 +73,5 @@ class Interpolated : public Base {
     }
 
    private:
-    size_t data_size_;
+    size_t data_size_{};
 };
