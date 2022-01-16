@@ -27,6 +27,7 @@ conan_cmake_configure(REQUIRES ${CONAN_REQUIREMENTS}
                       SETTINGS build_type=Release
                     )
 
+set(CMAKE_CONFIGURATION_TYPES Debug Release)
 foreach(TYPE ${CMAKE_CONFIGURATION_TYPES})
     conan_cmake_autodetect(settings BUILD_TYPE ${TYPE})
     conan_cmake_install(PATH_OR_REFERENCE .
