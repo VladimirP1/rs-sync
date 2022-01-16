@@ -3,7 +3,7 @@ project(rs-sync)
 set(BUILD_SHARED_LIBS YES)
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 enable_testing()
@@ -26,11 +26,13 @@ conan_cmake_configure(REQUIRES ${CONAN_REQUIREMENTS}
                       OPTIONS opencv:with_ffmpeg=True
                       SETTINGS build_type=Release
                     )
-conan_cmake_autodetect(settings)
 
-conan_cmake_install(PATH_OR_REFERENCE .
-                    BUILD missing
-                    REMOTE conancenter
-                    SETTINGS ${settings})
+foreach(TYPE ${CMAKE_CONFIGURATION_TYPES})
+    conan_cmake_autodetect(settings BUILD_TYPE ${TYPE})
+    conan_cmake_install(PATH_OR_REFERENCE .
+                        BUILD missing
+                        REMOTE conancenter
+                        SETTINGS ${settings})
+endforeach()
 
 add_subdirectory(src)
