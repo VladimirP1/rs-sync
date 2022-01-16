@@ -27,51 +27,42 @@ class OpticalFlowLK : public rssync::BaseComponent {
             CalcKeypoints(frame_number, info);
         }
         cv::Mat prev_color, cur_color, prev, cur;
-        {
-            Stopwatch s("loading");
-        if (!frame_loader_->GetFrame(frame_number, prev_color) ||
-            !frame_loader_->GetFrame(frame_number + 1, cur_color)) {
-            return false;
-        }
+        
+            if (!frame_loader_->GetFrame(frame_number, prev_color) ||
+                !frame_loader_->GetFrame(frame_number + 1, cur_color)) {
+                return false;
+            }
 
-        cv::cvtColor(prev_color, prev, cv::COLOR_BGR2GRAY);
-        cv::cvtColor(cur_color, cur, cv::COLOR_BGR2GRAY);
-        }
+            cv::cvtColor(prev_color, prev, cv::COLOR_BGR2GRAY);
+            cv::cvtColor(cur_color, cur, cv::COLOR_BGR2GRAY);
 
         // Track
         std::vector<uchar> status;
         std::vector<float> err;
 
         std::vector<cv::Point2f> new_corners;
-        {
-            Stopwatch s("pyrlk");
-            cv::calcOpticalFlowPyrLK(
-                prev, cur, info.points, new_corners, status, err, cv::Size(21, 21), 6,
-                cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, .001), 0,
-                1e-4);
-        }
+        cv::calcOpticalFlowPyrLK(
+            prev, cur, info.points, new_corners, status, err, cv::Size(21, 21), 6,
+            cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, .001), 0, 1e-4);
 
-        // FIlter out low quality corners
-        {
-            Stopwatch s("filtering");
-            auto old_corner_iter = info.points.begin();
-            auto new_corner_iter = new_corners.begin();
-            auto ids_iter = info.ids.begin();
-            auto status_iter = status.begin();
-            while (new_corner_iter != new_corners.end()) {
-                auto new_response = CornerQuality(cur, *new_corner_iter);
+        // Filter out low quality corners
+        auto old_corner_iter = info.points.begin();
+        auto new_corner_iter = new_corners.begin();
+        auto ids_iter = info.ids.begin();
+        auto status_iter = status.begin();
+        while (new_corner_iter != new_corners.end()) {
+            auto new_response = CornerQuality(cur, *new_corner_iter);
 
-                if (2 * new_response < info.discard_threshold || !*status_iter) {
-                    old_corner_iter = info.points.erase(old_corner_iter);
-                    new_corner_iter = new_corners.erase(new_corner_iter);
-                    status_iter = status.erase(status_iter);
-                    ids_iter = info.ids.erase(ids_iter);
-                } else {
-                    ++old_corner_iter;
-                    ++new_corner_iter;
-                    ++status_iter;
-                    ++ids_iter;
-                }
+            if (2 * new_response < info.discard_threshold || !*status_iter) {
+                old_corner_iter = info.points.erase(old_corner_iter);
+                new_corner_iter = new_corners.erase(new_corner_iter);
+                status_iter = status.erase(status_iter);
+                ids_iter = info.ids.erase(ids_iter);
+            } else {
+                ++old_corner_iter;
+                ++new_corner_iter;
+                ++status_iter;
+                ++ids_iter;
             }
         }
 
@@ -88,6 +79,8 @@ class OpticalFlowLK : public rssync::BaseComponent {
 
         std::cout << (int)info.type << " " << info.points.size() << " " << new_corners.size()
                   << std::endl;
+
+        return true;
     }
 
     // private:
