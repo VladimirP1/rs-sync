@@ -86,8 +86,8 @@ cv::Point2d MinSubpixel(cv::Mat_<float> img) {
 int main() {
     // VideoReader reader("GX019642.MP4");
     // VideoReader reader("VID_20220110_135451.mp4");
-    VideoReader reader("000021AA.MP4");
-    // VideoReader reader("193653AA.MP4");
+    // VideoReader reader("000021AA.MP4");
+    VideoReader reader("193653AA.MP4");
 
     TrackerImpl tracker(50, 700);
     FisheyeCalibration calibration;
@@ -97,7 +97,7 @@ int main() {
     std::ifstream("GoPro_Hero6_2160p_43.json") >> calibration;
     // std::ifstream("GoPro_Hero6_2160p_16by9_wide.json") >> calibration;
 
-    reader.SetPosition(10e3);
+    reader.SetPosition(0e3);
 
     tracker.InitCorners(reader.CurGray());
 

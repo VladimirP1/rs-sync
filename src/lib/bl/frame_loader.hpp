@@ -13,8 +13,6 @@ void RegisterFrameLoader(std::shared_ptr<IContext> ctx, std::string name,
 class IFrameLoader : public BaseComponent {
    public:
     virtual bool GetFrame(int n, cv::Mat& out) = 0;
-
-   private:
 };
 
 constexpr const char* kFrameLoaderName = "FrameLoader";
