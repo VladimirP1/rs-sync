@@ -1,11 +1,15 @@
 #include "optical_flow.hpp"
 
-#include <bl/frame_loader.hpp>
-#include <bl/utils.hpp>
-#include <ds/lru_cache.hpp>
+
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
+
+#include <ds/lru_cache.hpp>
+
+#include "frame_loader.hpp"
+#include "pair_storage.hpp"
+#include "utils.hpp"
 
 namespace rssync {
 class OpticalFlowLK : public IOpticalFlow {
@@ -13,11 +17,12 @@ class OpticalFlowLK : public IOpticalFlow {
 
    public:
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {
-        frame_loader_ = ctx_.lock()->GetComponent<rssync::IFrameLoader>(rssync::kFrameLoaderName);
-        uuid_gen_ = ctx_.lock()->GetComponent<rssync::IUuidGen>(rssync::kUuidGenName);
+        frame_loader_ = ctx_.lock()->GetComponent<IFrameLoader>(kFrameLoaderName);
+        uuid_gen_ = ctx_.lock()->GetComponent<IUuidGen>(rssync::kUuidGenName);
+        pair_storage_ = ctx_.lock()->GetComponent<IPairStorage>(kPairStorageName);
     }
 
-    bool CalcOptflow(int frame_number) {
+    bool CalcOptflow(int frame_number) override {
         KeypointInfo info;
         GetKeypoints(frame_number, info);
         if (info.points.size() < min_corners_) {
@@ -74,6 +79,13 @@ class OpticalFlowLK : public IOpticalFlow {
             keypoint_cache_.put(frame_number + 1, new_info);
         }
 
+        // Put it into storage
+        PairDescription desc;
+        desc.point_ids = info.ids;
+        desc.points_a = info.points;
+        desc.points_b = new_corners;
+        desc.has_points = true;
+        pair_storage_->Update(frame_number, desc);
 
         return true;
     }
@@ -104,6 +116,10 @@ class OpticalFlowLK : public IOpticalFlow {
         if (!frame_loader_->GetFrame(frame_number, src)) {
             return false;
         }
+
+        info.ids.clear();
+        info.points.clear();
+        
         // Convert to gray
         cv::cvtColor(src, img, cv::COLOR_BGR2GRAY);
         std::vector<cv::Point2f> corners;
@@ -164,6 +180,8 @@ class OpticalFlowLK : public IOpticalFlow {
    private:
     std::shared_ptr<IFrameLoader> frame_loader_;
     std::shared_ptr<IUuidGen> uuid_gen_;
+    std::shared_ptr<IPairStorage> pair_storage_;
+
     LruCache<int, KeypointInfo> keypoint_cache_{kCacheSize};
     std::mutex cache_mutex_;
 

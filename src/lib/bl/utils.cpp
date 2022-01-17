@@ -16,7 +16,7 @@ class UuidGenImpl : public rssync::IUuidGen {
 
 void UuidGenImpl::ContextLoaded(std::weak_ptr<BaseComponent> self) {}
 
-long UuidGenImpl::Next() { return g.fetch_and(1); }
+long UuidGenImpl::Next() { return g.fetch_add(1); }
 
 void RegisterUuidGen(std::shared_ptr<IContext> ctx, std::string name) {
     RegisterComponent<UuidGenImpl>(ctx, name);
