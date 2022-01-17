@@ -3,9 +3,10 @@
 
 #include <numeric>
 
-#include <math/prefix_sums.hpp>
-#include <math/range_interpolated.hpp>
-#include <math/segment_tree.hpp>
+#include <ds/prefix_sums.hpp>
+#include <ds/range_interpolated.hpp>
+#include <ds/segment_tree.hpp>
+
 #include <math/simple_math.hpp>
 
 TEMPLATE_TEST_CASE("Interpolated<T> queries with different underlying data structures", "",
