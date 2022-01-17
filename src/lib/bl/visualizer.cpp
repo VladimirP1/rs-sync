@@ -6,8 +6,6 @@
 
 #include "pair_storage.hpp"
 
-#include <iostream>
-
 namespace rssync {
 class VisualizerImpl : public IVisualizer {
    public:
@@ -31,9 +29,6 @@ class VisualizerImpl : public IVisualizer {
             ab ? (undistorted ? desc.points_undistorted_a : desc.points_a)
                : (undistorted ? desc.points_undistorted_b : desc.points_b);
 
-        std::cout << ids.size() << " " << pts.size() << std::endl;
-
-        assert(ids.size() == pts.size());
         for (int i = 0; i < ids.size(); ++i) {
             cv::circle(frame, pts[i], 5, GetColor(ids[i]), 3);
         }
@@ -50,7 +45,6 @@ class VisualizerImpl : public IVisualizer {
         std::vector<cv::Point2f>& pts_a = undistorted ? desc.points_undistorted_a : desc.points_a;
         std::vector<cv::Point2f>& pts_b = undistorted ? desc.points_undistorted_b : desc.points_b;
 
-        assert(ids.size() == pts.size());
         for (int i = 0; i < ids.size(); ++i) {
             cv::line(frame, pts_a[i], pts_b[i], GetColor(ids[i]), 2);
         }
