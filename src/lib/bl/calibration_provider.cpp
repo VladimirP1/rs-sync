@@ -9,6 +9,7 @@ namespace rssync {
 class CalibrationProviderImpl : public ICalibrationProvider {
    public:
     CalibrationProviderImpl(std::string filename = "") {
+        if (filename == "") return;
         std::ifstream in{filename};
         if (!in) {
             throw std::runtime_error{"cannot open calibration file"};
@@ -31,7 +32,8 @@ class CalibrationProviderImpl : public ICalibrationProvider {
     std::mutex mtx_;
 };
 
-void RegisterCalibrationProvider(std::shared_ptr<IContext> ctx, std::string name, std::string filename) {
+void RegisterCalibrationProvider(std::shared_ptr<IContext> ctx, std::string name,
+                                 std::string filename) {
     RegisterComponent<CalibrationProviderImpl>(ctx, name, filename);
 }
 }  // namespace rssync
