@@ -17,6 +17,8 @@ struct PairDescription {
     std::vector<uchar> mask_essential, mask_4d;
     cv::Mat_<double> R, t, points4d;
 
+    std::vector<cv::Mat> _debug_0_, _debug_1_;
+
     bool has_points{}, has_undistorted{}, has_pose{}, has_points4d{};
 };
 

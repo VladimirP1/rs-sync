@@ -53,6 +53,13 @@ class PoseEstimatorImpl : public IPoseEstimator {
                         cv::Mat::eye(3, 3, CV_64F), desc.R, desc.t, 100000, desc.mask_4d,
                         desc.points4d);
 
+        // It is more convinient if all points have positive Z
+        for (int i = 0; i < desc.points4d.cols; ++i) {
+            if (desc.points4d(2, i) < 0) {
+                desc.points4d.col(i) = - desc.points4d.col(i);
+            }
+        }
+
         desc.has_pose = true;
         desc.has_points4d = true;
 
