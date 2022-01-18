@@ -79,21 +79,22 @@ class Correlator : public BaseComponent {
             cv::invert(To4x4(Pb), Pb_inv);
 
             // TODO: see if we can stop using point4d here, cause it is a bit wrong
-            Pa_inv = ProjectionTo2d(Pa_inv, desc.points4d(2, i), desc.points4d(3, i), 1.);
-            Pb_inv = ProjectionTo2d(Pb_inv, desc.points4d(2, i), desc.points4d(3, i), 1.);
+            Pa_inv = ProjectionTo2d(Pa_inv, point_a.z, desc.points4d(3, i), 1.);
+            Pb_inv = ProjectionTo2d(Pb_inv, point_b.z, desc.points4d(3, i), 1.);
 
             // Now we can map:
             //   distorted 2d points to undistorted 2d in camera frame [apx_undistort_*]
             //   undistorted 2d to 3d point in inertial frame          [P*_inv         ]
             //   3d point in inertial frame to virtual image plane     [P              ]
 
-            cv::Mat patch_a;
-            cv::Mat patch_b;
+            cv::Mat patch_a, patch_b;
+            cv::Mat offset_map_a, offset_map_b;
             bool success = true;
-            success &= ExtractUndistortedPatch(frame_a, patch_a, P * Pa_inv * apx_undistort_a,
+            success &= ExtractUndistortedPatch(patch_a, offset_map_a, frame_a, P * Pa_inv * apx_undistort_a,
                                                dist_a, cv::Size(32, 32));
-            success &= ExtractUndistortedPatch(frame_b, patch_b, P * Pb_inv * apx_undistort_b,
+            success &= ExtractUndistortedPatch(patch_b, offset_map_b, frame_b, P * Pb_inv * apx_undistort_b,
                                                dist_b, cv::Size(32, 32));
+
             if (!success) continue;
 
             desc._debug_0_.push_back(patch_a);
@@ -110,7 +111,7 @@ class Correlator : public BaseComponent {
         return out;
     }
 
-    bool ExtractUndistortedPatch(cv::Mat& frame, cv::Mat& patch, cv::Mat transformation,
+    bool ExtractUndistortedPatch(cv::Mat& patch, cv::Mat& offset_map, const cv::Mat& frame,  cv::Mat transformation,
                                  cv::Point2d point_in_frame, cv::Size dst_size) {
         // Undistort patch center point
         cv::Mat_<double> point_m(3, 1, CV_64F);
@@ -176,8 +177,13 @@ class Correlator : public BaseComponent {
         adjustment.col(2) << x_hs - x / z, y_hs - y / z, 1;
         T_roi = adjustment * T_roi;
 
+        // Remap
         cv::warpPerspective(frame(roi), patch, T_roi, dst_size, cv::INTER_CUBIC,
                             cv::BORDER_CONSTANT, cv::Scalar(0, 255, 0));
+
+        // Remember mapping for future correlation lookups
+        adjustment.col(2) << -x / z, -y / z, 1;
+        offset_map = adjustment * transformation;
 
         return true;
     }
@@ -222,8 +228,10 @@ int main() {
         PairDescription desc;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
         for (int j = 0; j < desc._debug_0_.size(); ++j) {
-            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "a.jpg", desc._debug_0_[j]);
-            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "b.jpg", desc._debug_1_[j]);
+            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "a.jpg",
+                        desc._debug_0_[j]);
+            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "b.jpg",
+                        desc._debug_1_[j]);
         }
 
         cv::Mat img;
