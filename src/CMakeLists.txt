@@ -33,6 +33,10 @@ add_executable(ceres_test ceres_test.cpp)
 target_link_libraries(ceres_test Ceres::ceres)
 install(TARGETS t)
 
+# -----
+add_executable(ceres_test2 ceres_test2.cpp)
+target_link_libraries(ceres_test2 Ceres::ceres)
+install(TARGETS t)
 
 # tests
 add_subdirectory(test)

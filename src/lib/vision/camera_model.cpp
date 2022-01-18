@@ -1,7 +1,6 @@
 #include "camera_model.hpp"
 
-void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
-                            cv::Mat camera_matrix,
+void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A, cv::Mat camera_matrix,
                             cv::Mat distortion_cooficients) {
     static constexpr double eps = 1e-9;
     static constexpr int kNumIterations = 9;
@@ -21,14 +20,12 @@ void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
     double theta = M_PI / 4.;
     double dthetaDtheta_ = 0;
     for (int i = 0; i < kNumIterations; ++i) {
-        double theta2 = theta * theta, theta3 = theta2 * theta,
-               theta4 = theta2 * theta2, theta5 = theta2 * theta3,
-               theta6 = theta3 * theta3, theta7 = theta3 * theta4,
+        double theta2 = theta * theta, theta3 = theta2 * theta, theta4 = theta2 * theta2,
+               theta5 = theta2 * theta3, theta6 = theta3 * theta3, theta7 = theta3 * theta4,
                theta8 = theta4 * theta4, theta9 = theta4 * theta5;
-        double cur_theta_ = theta + D(0) * theta3 + D(1) * theta5 +
-                            D(2) * theta7 + D(3) * theta9;
-        double cur_dTheta_ = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
-                             7 * D(2) * theta6 + 8 * D(3) * theta8;
+        double cur_theta_ = theta + D(0) * theta3 + D(1) * theta5 + D(2) * theta7 + D(3) * theta9;
+        double cur_dTheta_ =
+            1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 + 7 * D(2) * theta6 + 8 * D(3) * theta8;
         double error = cur_theta_ - theta_;
         dthetaDtheta_ = 1. / cur_dTheta_;
         double new_theta = theta - error * dthetaDtheta_;
@@ -44,8 +41,7 @@ void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
 
     double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
     double drDtheta_ = drDtheta * dthetaDtheta_;
-    double dsDtheta_ =
-        (theta_ < eps) ? 0. : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
+    double dsDtheta_ = (theta_ < eps) ? 0. : (drDtheta_ * theta_ - r * 1) / theta_ / theta_;
 
     double dxdu = dx_du * s + x_ * dsDtheta_ * dtheta_dx_ * dx_du;
     double dydv = dy_dv * s + y_ * dsDtheta_ * dtheta_dy_ * dy_dv;
@@ -71,8 +67,7 @@ void UndistortPointJacobian(cv::Point2d uv, cv::Point2d& xy, cv::Mat& A,
     A = t * ret;
 }
 
-void ProjectPointJacobian(cv::Point3d xyz, cv::Point2d& uv, cv::Mat& A,
-                          cv::Mat camera_matrix,
+void ProjectPointJacobian(cv::Point3d xyz, cv::Point2d& uv, cv::Mat& A, cv::Mat camera_matrix,
                           cv::Mat distortion_cooficients) {
     auto& K = static_cast<cv::Mat_<double>&>(camera_matrix);
     auto& D = static_cast<cv::Mat_<double>&>(distortion_cooficients);
@@ -89,14 +84,12 @@ void ProjectPointJacobian(cv::Point3d xyz, cv::Point2d& uv, cv::Mat& A,
     double theta = std::atan(r);
     double dthetaDr = 1. / (1 + r * r);
 
-    double theta2 = theta * theta, theta3 = theta2 * theta,
-           theta4 = theta2 * theta2, theta5 = theta2 * theta3,
-           theta6 = theta3 * theta3, theta7 = theta3 * theta4,
+    double theta2 = theta * theta, theta3 = theta2 * theta, theta4 = theta2 * theta2,
+           theta5 = theta2 * theta3, theta6 = theta3 * theta3, theta7 = theta3 * theta4,
            theta8 = theta4 * theta4, theta9 = theta4 * theta5;
-    double theta_ =
-        theta + D(0) * theta3 + D(1) * theta5 + D(2) * theta7 + D(3) * theta9;
-    double dtheta_dtheta = 1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 +
-                           7 * D(2) * theta6 + 8 * D(3) * theta8;
+    double theta_ = theta + D(0) * theta3 + D(1) * theta5 + D(2) * theta7 + D(3) * theta9;
+    double dtheta_dtheta =
+        1 + 3 * D(0) * theta2 + 5 * D(1) * theta4 + 7 * D(2) * theta6 + 8 * D(3) * theta8;
 
     double k = theta_ / r;
     double dkdr = (dtheta_dtheta * dthetaDr * r - theta_) / (r * r);
@@ -134,4 +127,78 @@ void ProjectPointJacobian(cv::Point3d xyz, cv::Point2d& uv, cv::Mat& A,
     // clang-format on
 
     A = t * ret;
+}
+
+
+// TODO
+void ProjectPointJacobianExtended(double const* xyz, double const* lens_model) {
+    // x y z fx fy cx cy k0 k1 k2 k3
+    double x = xyz[0], y = xyz[1], z = xyz[2];
+    double fx = lens_model[0], fy = lens_model[1], cx = lens_model[2], cy = lens_model[3],
+           k0 = lens_model[4], k1 = lens_model[5], k2 = lens_model[6], k3 = lens_model[7];
+
+    double a = x / z;
+    double b = y / z;
+    double dadx = 1. / z;
+    double dbdy = 1. / z;
+    double dadz = -1. / (z * z);
+    double dbdz = -1. / (z * z);
+
+    double r = std::sqrt(a * a + b * b);
+    double drda = a / r;
+    double drdb = b / r;
+
+    double theta = std::atan(r);
+    double dthetaDr = 1. / (1 + r * r);
+
+    double theta2 = theta * theta, theta3 = theta2 * theta, theta4 = theta2 * theta2,
+           theta5 = theta2 * theta3, theta6 = theta3 * theta3, theta7 = theta3 * theta4,
+           theta8 = theta4 * theta4, theta9 = theta4 * theta5;
+    double theta_ = theta + k0 * theta3 + k1 * theta5 + k2 * theta7 + k3 * theta9;
+    double dtheta_dtheta =
+        1 + 3 * k0 * theta2 + 5 * k1 * theta4 + 7 * k2 * theta6 + 8 * k3 * theta8;
+    double dtheta_dk0 = theta3;
+    double dtheta_dk1 = theta5;
+    double dtheta_dk2 = theta7;
+    double dtheta_dk3 = theta9;
+
+    double k = theta_ / r;
+    double dkdr = (dtheta_dtheta * dthetaDr * r - theta_) / (r * r);
+    double dkDtheta_ = 1 / r;
+
+    double x_ = a * k, y_ = b * k;
+    double dx_da = k + dkdr * drda * a;
+    double dy_db = k + dkdr * drdb * b;
+    double dx_db = dkdr * drdb * a;
+    double dy_da = dkdr * drda * b;
+    double dx_dk = a;
+    double dy_dk = b;
+
+    double u = fx * x_ + cx, v = fy * y_ + cy;
+    double dudx_ = fx;
+    double dvdy_ = fy;
+
+    // clang-format off
+    double 
+        dudx = dudx_ * dx_da * dadx,
+        dudy = dudx_ * dx_db * dbdy,
+        dudz = dudx_ * (dx_da * dadz + dx_db * dbdz),
+        dudfx = x_, dudfy = 0.,
+        dudcx = 1., dudcy = 0.,
+        dudk0 = dudx_ * dx_dk * dkDtheta_ * dtheta_dk0,
+        dudk1 = dudx_ * dx_dk * dkDtheta_ * dtheta_dk1,
+        dudk2 = dudx_ * dx_dk * dkDtheta_ * dtheta_dk2,
+        dudk3 = dudx_ * dx_dk * dkDtheta_ * dtheta_dk3;
+
+    double 
+        dvdx = dvdy_ * dy_da * dadx,
+        dvdy = dvdy_ * dy_db * dbdy,
+        dvdz = dvdy_ * (dy_da * dadz + dy_db * dbdz),
+        dvdfx = 0., dvdfy = y_,
+        dvdcx = 0., dvdcy = 1.,
+        dvdk0 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk0,
+        dvdk1 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk1,
+        dvdk2 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk2,
+        dvdk3 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk3;
+    // clang-format on
 }

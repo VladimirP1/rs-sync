@@ -90,14 +90,20 @@ class Correlator : public BaseComponent {
             cv::Mat patch_a, patch_b;
             cv::Mat offset_map_a, offset_map_b;
             bool success = true;
-            success &= ExtractUndistortedPatch(patch_a, offset_map_a, frame_a, P * Pa_inv * apx_undistort_a,
-                                               dist_a, cv::Size(32, 32));
-            success &= ExtractUndistortedPatch(patch_b, offset_map_b, frame_b, P * Pb_inv * apx_undistort_b,
-                                               dist_b, cv::Size(32, 32));
+            success &=
+                ExtractUndistortedPatch(patch_a, offset_map_a, frame_a,
+                                        P * Pa_inv * apx_undistort_a, dist_a, cv::Size(20, 20));
+            success &=
+                ExtractUndistortedPatch(patch_b, offset_map_b, frame_b,
+                                        P * Pb_inv * apx_undistort_b, dist_b, cv::Size(17, 17));
 
             if (!success) continue;
 
-            desc._debug_0_.push_back(patch_a);
+            // Compute correlation map between reprojected patches
+            cv::Mat correlation_map;
+            cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_SQDIFF_NORMED);
+
+            desc._debug_0_.push_back(correlation_map);
             desc._debug_1_.push_back(patch_b);
             pair_storage_->Update(frame_number, desc);
         }
@@ -111,8 +117,9 @@ class Correlator : public BaseComponent {
         return out;
     }
 
-    bool ExtractUndistortedPatch(cv::Mat& patch, cv::Mat& offset_map, const cv::Mat& frame,  cv::Mat transformation,
-                                 cv::Point2d point_in_frame, cv::Size dst_size) {
+    bool ExtractUndistortedPatch(cv::Mat& patch, cv::Mat& offset_map, const cv::Mat& frame,
+                                 cv::Mat transformation, cv::Point2d point_in_frame,
+                                 cv::Size dst_size) {
         // Undistort patch center point
         cv::Mat_<double> point_m(3, 1, CV_64F);
         point_m << point_in_frame.x, point_in_frame.y, 1.;
@@ -197,19 +204,19 @@ class Correlator : public BaseComponent {
 int main() {
     auto ctx = IContext::CreateContext();
 
-    RegisterFrameLoader(ctx, kFrameLoaderName, "141101AA.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GoPro_Hero6_2160p_43.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
-    RegisterVisualizer(ctx, KVisualizerName);
+    RegisterVisualizer(ctx, kVisualizerName);
 
     RegisterComponent<Correlator>(ctx, "debug0");
 
     ctx->ContextLoaded();
 
-    for (int i = 30 * 42; i < 30 * 42 + 800; ++i) {
+    for (int i = 30 * 31; i < 30 * 31 + 80; ++i) {
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
         // std::cout << out.cols << std::endl;
@@ -229,9 +236,21 @@ int main() {
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
         for (int j = 0; j < desc._debug_0_.size(); ++j) {
             cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "a.jpg",
-                        desc._debug_0_[j]);
-            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "b.jpg",
                         desc._debug_1_[j]);
+            auto ucorr = desc._debug_0_[j];
+            double min, max;
+            cv::minMaxLoc(ucorr, &min, &max);
+            ucorr -= min;
+            ucorr /= (max - min);
+
+            ucorr.convertTo(ucorr, CV_8UC1, 255);
+            cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
+            cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_LINEAR);
+            cv::applyColorMap(ucorr, ucorr, cv::COLORMAP_MAGMA);
+            cv::circle(ucorr, {ucorr.cols / 2, ucorr.rows / 2}, 1, cv::Scalar(0, 255, 0), 1,
+                       cv::LINE_AA);
+            cv::imwrite("out" + std::to_string(i) + "d" + std::to_string(j) + "b.jpg",
+                        ucorr);
         }
 
         cv::Mat img;

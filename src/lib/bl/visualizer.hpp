@@ -16,6 +16,6 @@ class IVisualizer : public rssync::BaseComponent {
                                       bool undistorted = false) = 0;
 };
 
-constexpr const char* KVisualizerName = "Visualizer";
+constexpr const char* kVisualizerName = "Visualizer";
 
 }  // namespace rssync
