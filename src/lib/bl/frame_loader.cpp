@@ -8,7 +8,7 @@
 
 namespace rssync {
 class FrameLoaderImpl : public IFrameLoader {
-    static constexpr size_t kCacheSize = 128;
+    static constexpr size_t kCacheSize = 3;
 
    public:
     FrameLoaderImpl(std::string filename);

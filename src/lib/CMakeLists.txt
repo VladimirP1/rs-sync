@@ -26,7 +26,19 @@ install(TARGETS libds)
 
 # -----
 
-add_library(libbl bl/frame_loader.cpp bl/context.cpp bl/utils.cpp bl/optical_flow.cpp bl/pair_storage.cpp bl/pose_estimator.cpp bl/calibration_provider.cpp bl/visualizer.cpp)
+set( LIBBL_SOURCES 
+    bl/frame_loader.cpp
+    bl/context.cpp 
+    bl/utils.cpp
+    bl/optical_flow.cpp 
+    bl/pair_storage.cpp 
+    bl/pose_estimator.cpp 
+    bl/calibration_provider.cpp 
+    bl/visualizer.cpp
+bl/correlator.cpp
+)
+
+add_library(libbl ${LIBBL_SOURCES})
 target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(libbl PUBLIC libds)
 install(TARGETS libbl)

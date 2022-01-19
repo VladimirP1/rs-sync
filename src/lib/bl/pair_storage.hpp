@@ -14,12 +14,16 @@ struct PairDescription {
     std::vector<long> point_ids;
     std::vector<cv::Point2f> points_a, points_b;
     std::vector<cv::Point2f> points_undistorted_a, points_undistorted_b;
-    std::vector<uchar> mask_essential, mask_4d;
+    std::vector<uchar> mask_essential, mask_4d, mask_correlation;
     cv::Mat_<double> R, t, points4d;
 
-    std::vector<cv::Mat> _debug_0_, _debug_1_, _debug_2_, _debug_3_;
+    std::vector<cv::Mat> correlations;
+    std::vector<cv::Mat> corr_gradients;
+    std::vector<std::pair<cv::Mat, cv::Mat>> patch_transforms;
+    std::vector<std::pair<cv::Mat, cv::Mat>> debug_patches;
 
-    bool has_points{}, has_undistorted{}, has_pose{}, has_points4d{};
+    bool enable_debug{};
+    bool has_points{}, has_undistorted{}, has_pose{}, has_points4d{}, has_correlations{};
 };
 
 class IPairStorage : public rssync::BaseComponent {
@@ -28,7 +32,7 @@ class IPairStorage : public rssync::BaseComponent {
     virtual bool Get(int frame, PairDescription& desc) = 0;
     virtual bool Drop(int frame) = 0;
     virtual void GetFramesWith(std::vector<int> out, bool points, bool undistorted, bool pose,
-                               bool points4d) = 0;
+                               bool points4d, bool correlations) = 0;
 };
 
 constexpr const char* kPairStorageName = "PairStorage";

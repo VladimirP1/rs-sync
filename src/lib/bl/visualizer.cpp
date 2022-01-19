@@ -1,6 +1,7 @@
 #include "visualizer.hpp"
 
 #include <cassert>
+#include <numeric>
 
 #include <opencv2/imgproc.hpp>
 
@@ -13,9 +14,7 @@ class VisualizerImpl : public IVisualizer {
         pair_storage_ = ctx_.lock()->GetComponent<IPairStorage>(kPairStorageName);
     }
 
-    void DimImage(cv::Mat& frame, double k) override {
-        frame /= (1./k);
-    }
+    void DimImage(cv::Mat& frame, double k) override { frame /= (1. / k); }
 
     void OverlayMatched(cv::Mat& frame, int frame_number, bool ab, bool undistorted) override {
         PairDescription desc;
@@ -31,6 +30,9 @@ class VisualizerImpl : public IVisualizer {
 
         for (int i = 0; i < ids.size(); ++i) {
             cv::circle(frame, pts[i], 5, GetColor(ids[i]), 3);
+            if (desc.has_pose && desc.mask_essential[i]) {
+                cv::circle(frame, pts[i], 12, cv::Scalar(0,0,255), 4);
+            }
         }
     }
 
@@ -50,6 +52,91 @@ class VisualizerImpl : public IVisualizer {
         }
     }
 
+    bool VisualizeCorrelations(cv::Mat& out, int frame_number, double target_aspect) override {
+        PairDescription desc;
+        if (!pair_storage_->Get(frame_number, desc) || !desc.has_correlations) {
+            return false;
+        }
+
+        int target_w{}, target_h{};
+        for (int i = 0; i < desc.correlations.size(); ++i) {
+            if (desc.mask_correlation[i]) {
+                cv::Mat grad_col;
+                CorrelationToColor(desc.correlations[i], grad_col, cv::COLORMAP_DEEPGREEN);
+                auto corr_size = grad_col.size();
+                auto patch_size_a = desc.debug_patches.empty() ? cv::Size(0, 0)
+                                                               : desc.debug_patches[i].first.size();
+                auto patch_size_b = desc.debug_patches.empty() ? cv::Size(0, 0)
+                                                               : desc.debug_patches[i].first.size();
+                target_w =
+                    std::max(corr_size.width, std::max(patch_size_a.width, patch_size_b.width));
+                target_h =
+                    std::max(corr_size.height, std::max(patch_size_a.height, patch_size_b.height));
+                break;
+            }
+        }
+
+        if (target_w == 0 || target_h == 0) return false;
+
+        int total_tiles =
+            std::accumulate(desc.mask_correlation.begin(), desc.mask_correlation.end(), 0);
+
+        size_t canvas_w{1}, canvas_h{1};
+        while (canvas_w * canvas_h < total_tiles) {
+            if ((canvas_w * target_w * 3.) / (canvas_h * target_h * 2.) < target_aspect) {
+                ++canvas_w;
+            } else {
+                ++canvas_h;
+            }
+        }
+
+        out = cv::Mat::zeros(canvas_h * target_h * 2, canvas_w * target_w * 3, CV_8UC3);
+
+        int k{};
+        for (int i = 0; i < canvas_w; i += 1) {
+            for (int j = 0; j < canvas_h; j += 1) {
+                while (!desc.mask_correlation[k] && k < desc.mask_correlation.size()) ++k;
+                if (k >= desc.mask_correlation.size()) break;
+                auto base_row = j * target_h * 2;
+                auto base_col = i * target_w * 3;
+                auto corr_roi = cv::Rect(base_col, base_row, target_w, target_h);
+                auto gradx_roi = cv::Rect(base_col + target_w, base_row, target_w, target_h);
+                auto grady_roi =
+                    cv::Rect(base_col + target_w * 2, base_row, target_w, target_h);
+                auto a_roi = cv::Rect(base_col, base_row + target_h, target_w, target_h);
+                auto b_roi = cv::Rect(base_col + target_w, base_row + target_h, target_w, target_h);
+
+                if (!desc.debug_patches.empty()) {
+                    cv::Mat_<double> affine(2, 3, CV_64F);
+                    cv::Size src_size = desc.debug_patches[k].first.size();
+                    affine << 2, 0, (a_roi.height - src_size.height) / 2., 0, 2.,
+                        (a_roi.width - src_size.width) / 2.;
+                    cv::warpAffine(desc.debug_patches[k].first, out(a_roi), affine, a_roi.size());
+
+                    src_size = desc.debug_patches[k].second.size();
+                    affine << 2, 0, (a_roi.height - src_size.height) / 2., 0, 2.,
+                        (a_roi.width - src_size.width) / 2.;
+                    cv::warpAffine(desc.debug_patches[k].second, out(b_roi), affine, b_roi.size());
+                }
+
+                cv::Mat grad_col, tmp;
+                CorrelationToColor(desc.correlations[k], grad_col, cv::COLORMAP_MAGMA);
+                cv::resize(grad_col, out(corr_roi), corr_roi.size());
+
+                cv::extractChannel(desc.corr_gradients[k], tmp, 0);
+                CorrelationToColor(tmp, grad_col, cv::COLORMAP_OCEAN);
+                cv::resize(grad_col, out(gradx_roi), gradx_roi.size());
+
+                cv::extractChannel(desc.corr_gradients[k], tmp, 1);
+                CorrelationToColor(tmp, grad_col, cv::COLORMAP_OCEAN);
+                cv::resize(grad_col, out(grady_roi), grady_roi.size());
+                ++k;
+            }
+        }
+
+        return true;
+    }
+
    private:
     cv::Scalar GetColor(long id) {
         size_t idx = static_cast<size_t>(id) % kColorPalleteSize;
@@ -60,6 +147,22 @@ class VisualizerImpl : public IVisualizer {
     static constexpr uchar kColorPallete[10][3] = {
         {249, 65, 68},   {243, 114, 44}, {248, 150, 30}, {249, 132, 74}, {249, 199, 79},
         {144, 190, 109}, {67, 170, 139}, {77, 144, 142}, {87, 117, 144}, {39, 125, 161}};
+
+    void CorrelationToColor(const cv::Mat& correlation, cv::Mat& colorized, cv::ColormapTypes t) {
+        auto ucorr = correlation.clone();
+        ucorr = cv::abs(ucorr);
+        double min, max;
+        cv::minMaxLoc(ucorr, &min, &max);
+        ucorr -= min;
+        ucorr /= (max - min);
+        ucorr.convertTo(ucorr, CV_8UC1, 255);
+        cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
+        cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_LINEAR);
+        cv::applyColorMap(ucorr, ucorr, t);
+        cv::circle(ucorr, {ucorr.cols / 2, ucorr.rows / 2}, 1, cv::Scalar(0, 255, 0), 1,
+                   cv::LINE_AA);
+        colorized = ucorr;
+    }
 
    private:
     std::shared_ptr<IPairStorage> pair_storage_;

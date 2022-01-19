@@ -29,13 +29,14 @@ class PairStorageImpl : public IPairStorage {
     }
 
     void GetFramesWith(std::vector<int> out, bool points, bool undistorted, bool pose,
-                       bool points4d) override {
+                       bool points4d, bool correlations) override {
         std::unique_lock<std::mutex> lock{mtx_};
         for (auto& [k, v] : data_) {
             if (v.has_points < points) continue;
             if (v.has_undistorted < undistorted) continue;
             if (v.has_pose < pose) continue;
             if (v.has_points4d < points4d) continue;
+            if (v.has_correlations < correlations) continue;
             out.push_back(k);
         }
     }
