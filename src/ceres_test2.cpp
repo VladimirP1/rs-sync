@@ -16,31 +16,22 @@ using ceres::Solver;
 struct ExponentialResidual {
     ExponentialResidual(double x, double y, double z) : x_(x), y_(y), z_(z) {}
     template <typename T>
-    bool operator()(const T* const center, const T* sigma, const T* n, const T* alpha,
-                    T* residual) const {
-        T angle_axis[3];
-        angle_axis[0] = {};
-        angle_axis[1] = {};
-        angle_axis[2] = T(*alpha);
+    bool operator()(const T* ampl, const T* const center, const T* sigma, const T* n,
+                    const T* alpha, T* residual) const {
+        T xr = (x_ - center[0]) * cos(*alpha) - (y_ - center[1]) * sin(*alpha);
+        T yr = (x_ - center[0]) * sin(*alpha) + (y_ - center[1]) * cos(*alpha);
 
-        T point_shifted[3];
-        point_shifted[0] = x_ - center[0];
-        point_shifted[1] = y_ - center[1];
-        point_shifted[2] = {};
+        residual[0] = ampl[0] / sigma[0] / sigma[1] * exp(-xr * xr / 2. / (sigma[0] * sigma[0])) *
+                      exp(-yr * yr / 2. / (sigma[1] * sigma[1]));
 
-        T point_rotated[3];
-        AngleAxisRotatePoint(angle_axis, point_shifted, point_rotated);
-        // residual[0] = ampl[0] / 2. / M_PI / sigma[0] / sigma[1] *
-        //               exp(-point_rotated[0] * point_rotated[0] / 2. / (sigma[0] * sigma[0])) *
-        //               exp(-point_rotated[1] * point_rotated[1] / 2. / (sigma[1] * sigma[1]));
-
-        residual[0] = sigma[0] * point_rotated[0] * point_rotated[0] +
-                      sigma[1] * point_rotated[1] * point_rotated[1];
+        // residual[0] = sigma[0] * point_rotated[0] * point_rotated[0] +
+        //               sigma[1] * point_rotated[1] * point_rotated[1];
         residual[0] += n[0] * x_ + n[1] * y_ + n[2];
         residual[0] -= z_;
 
-        T d = point_rotated[0] * point_rotated[0] + point_rotated[1] * point_rotated[1] / 4.;
-        residual[0] *= 1. - 1. / (1. + exp(-d * d)); return true;
+        T d = (xr * xr + yr * yr) / 4.;
+        residual[0] *= 1. - 1. / (1. + exp(-d * d));
+        return true;
     }
 
    private:
@@ -59,6 +50,7 @@ int main(int argc, char** argv) {
     cv::minMaxLoc(data, nullptr, nullptr, nullptr, &max_loc);
     cv::imwrite("a.jpg", data);
 
+    double A = 1.;
     double center[2] = {max_loc.x * 1., max_loc.y * 1.};
     double sigma[2] = {1., 1.};
     double n[3] = {0., 0., 0.};
@@ -70,9 +62,9 @@ int main(int argc, char** argv) {
         for (int j = 0; j < data.rows; ++j) {
             // if (pow(i - center[0], 2) + pow(j - center[1], 2) < 3*3) {
             CostFunction* cost_function =
-                new AutoDiffCostFunction<ExponentialResidual, 1, 2, 2, 3, 1>(
+                new AutoDiffCostFunction<ExponentialResidual, 1, 1, 2, 2, 3, 1>(
                     new ExponentialResidual(i, j, data.at<uchar>(j, i) / 255.));
-            problem.AddResidualBlock(cost_function, nullptr, center, sigma, n, &alpha);
+            problem.AddResidualBlock(cost_function, nullptr, &A, center, sigma, n, &alpha);
             // std::cout << i << " " << j << std::endl;
             // }
         }
@@ -96,7 +88,7 @@ int main(int argc, char** argv) {
     //     for (int j = 0; j < data.rows; ++j) {
     //         double out;
     //         auto res = ExponentialResidual(i, j, 0);
-    //         res(center, sigma, n, &alpha, &out);
+    //         res(&A, center, sigma, n, &alpha, &out);
     //         data.at<uchar>(i, j) = std::abs(data.at<uchar>(i, j)-255 * out);
     //         std::cout << std::abs(data.at<uchar>(i, j)-255 * out) << std::endl;
     //     }
