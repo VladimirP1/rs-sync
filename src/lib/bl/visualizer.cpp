@@ -157,7 +157,7 @@ class VisualizerImpl : public IVisualizer {
         ucorr /= (max - min);
         ucorr.convertTo(ucorr, CV_8UC1, 255);
         cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
-        cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_LINEAR);
+        cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_CUBIC);
         cv::applyColorMap(ucorr, ucorr, t);
         cv::circle(ucorr, {ucorr.cols / 2, ucorr.rows / 2}, 1, cv::Scalar(0, 255, 0), 1,
                    cv::LINE_AA);
