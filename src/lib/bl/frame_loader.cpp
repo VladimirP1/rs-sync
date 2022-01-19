@@ -14,7 +14,7 @@ class FrameLoaderImpl : public IFrameLoader {
     FrameLoaderImpl(std::string filename);
 
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override;
-    bool GetFrame(int n, cv::Mat& out) override;
+    bool GetFrame(int n, cv::Mat& out, double* timestamp = nullptr) override;
 
     ~FrameLoaderImpl();
 
@@ -35,11 +35,14 @@ FrameLoaderImpl::FrameLoaderImpl(std::string filename) : cap_{filename} {
 
 FrameLoaderImpl::~FrameLoaderImpl() {}
 
-bool FrameLoaderImpl::GetFrame(int frame_number, cv::Mat& out) {
+bool FrameLoaderImpl::GetFrame(int frame_number, cv::Mat& out, double* timestamp) {
     std::unique_lock<std::mutex> lock{mtx_};
     if (auto maybe_frame = cache_.get(frame_number); maybe_frame) {
         auto& [ts, frame] = maybe_frame.value();
         out = frame;
+        if (timestamp) {
+            *timestamp = ts;
+        }
         return true;
     }
 
@@ -47,11 +50,14 @@ bool FrameLoaderImpl::GetFrame(int frame_number, cv::Mat& out) {
     if (frame_number != cur_frame_) {
         cap_.set(cv::CAP_PROP_POS_FRAMES, frame_number);
     }
-    double cur_timestamp_ = frame_number / fps_;
+    double cur_timestamp = frame_number / fps_;
     if (cap_.read(frame)) {
-        cache_.put(frame_number, {cur_timestamp_, frame});
+        cache_.put(frame_number, {cur_timestamp, frame});
         cur_frame_ = frame_number + 1;
         out = frame;
+        if (timestamp) {
+            *timestamp = cur_timestamp;
+        }
         return true;
     }
     cur_frame_ = -1;

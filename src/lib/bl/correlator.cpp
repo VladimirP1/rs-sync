@@ -106,7 +106,8 @@ class CorrelatorImpl : public ICorrelator {
 
             // Compute correlation map between reprojected patches
             cv::Mat correlation_map;
-            cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_SQDIFF_NORMED);
+            cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_CCORR_NORMED);
+            correlation_map = 1. - correlation_map;
 
             // Compute gradients of the correlation map
             cv::Mat corr_gradients[2], corr_gradient;

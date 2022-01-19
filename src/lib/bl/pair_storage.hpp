@@ -11,6 +11,7 @@ namespace rssync {
 void RegisterPairStorage(std::shared_ptr<IContext> ctx, std::string name);
 
 struct PairDescription {
+    double timestamp_a{}, timestamp_b{};
     std::vector<long> point_ids;
     std::vector<cv::Point2f> points_a, points_b;
     std::vector<cv::Point2f> points_undistorted_a, points_undistorted_b;

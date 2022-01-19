@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <numeric>
+#include <iostream>
 
 #include <opencv2/imgproc.hpp>
 
@@ -103,6 +104,8 @@ class VisualizerImpl : public IVisualizer {
                 auto gradx_roi = cv::Rect(base_col + target_w, base_row, target_w, target_h);
                 auto grady_roi =
                     cv::Rect(base_col + target_w * 2, base_row, target_w, target_h);
+                auto grad_roi =
+                    cv::Rect(base_col + target_w * 2, base_row + target_h, target_w, target_h);
                 auto a_roi = cv::Rect(base_col, base_row + target_h, target_w, target_h);
                 auto b_roi = cv::Rect(base_col + target_w, base_row + target_h, target_w, target_h);
 
@@ -130,6 +133,9 @@ class VisualizerImpl : public IVisualizer {
                 cv::extractChannel(desc.corr_gradients[k], tmp, 1);
                 CorrelationToColor(tmp, grad_col, cv::COLORMAP_OCEAN);
                 cv::resize(grad_col, out(grady_roi), grady_roi.size());
+
+                CorrelationGradToColor(desc.corr_gradients[k], grad_col);
+                cv::resize(grad_col, out(grad_roi), grad_roi.size());
                 ++k;
             }
         }
@@ -147,6 +153,20 @@ class VisualizerImpl : public IVisualizer {
     static constexpr uchar kColorPallete[10][3] = {
         {249, 65, 68},   {243, 114, 44}, {248, 150, 30}, {249, 132, 74}, {249, 199, 79},
         {144, 190, 109}, {67, 170, 139}, {77, 144, 142}, {87, 117, 144}, {39, 125, 161}};
+
+    void CorrelationGradToColor(const cv::Mat& correlation, cv::Mat& colorized) {
+        colorized = cv::Mat::zeros(correlation.rows, correlation.cols, CV_8UC3);
+        for (int i = 0; i < correlation.rows; ++i) {
+            for (int j = 0; j < correlation.cols; ++j) {
+                auto grad = correlation.at<cv::Vec2f>(i, j);
+                auto angle = atan2(grad[1], grad[0]);
+                uchar hue = angle * 255. / M_PI;
+                colorized.at<cv::Vec3b>(i, j) = {hue, 255, 127};
+                std::cout <<(int) hue << std::endl;
+            }
+        }
+        cv::cvtColor(colorized, colorized, cv::COLOR_HSV2BGR);
+    }
 
     void CorrelationToColor(const cv::Mat& correlation, cv::Mat& colorized, cv::ColormapTypes t) {
         auto ucorr = correlation.clone();

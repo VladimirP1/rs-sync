@@ -28,10 +28,10 @@ class OpticalFlowLK : public IOpticalFlow {
         if (info.points.size() < min_corners_) {
             CalcKeypoints(frame_number, info);
         }
+        double timestamp_a, timestamp_b;
         cv::Mat prev_color, cur_color, prev, cur;
-
-        if (!frame_loader_->GetFrame(frame_number, prev_color) ||
-            !frame_loader_->GetFrame(frame_number + 1, cur_color)) {
+        if (!frame_loader_->GetFrame(frame_number, prev_color, &timestamp_a) ||
+            !frame_loader_->GetFrame(frame_number + 1, cur_color, &timestamp_b)) {
             return false;
         }
 
@@ -81,6 +81,8 @@ class OpticalFlowLK : public IOpticalFlow {
 
         // Put it into storage
         PairDescription desc;
+        desc.timestamp_a = timestamp_a;
+        desc.timestamp_b = timestamp_b;
         desc.point_ids = info.ids;
         desc.points_a = info.points;
         desc.points_b = new_corners;

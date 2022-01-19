@@ -35,7 +35,7 @@ install(TARGETS t)
 
 # -----
 add_executable(ceres_test2 ceres_test2.cpp)
-target_link_libraries(ceres_test2 Ceres::ceres)
+target_link_libraries(ceres_test2 Ceres::ceres opencv::opencv)
 install(TARGETS t)
 
 # tests
