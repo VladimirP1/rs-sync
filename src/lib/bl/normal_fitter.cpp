@@ -1,18 +1,14 @@
+#include "normal_fitter.hpp"
+
 #include <ceres/ceres.h>
-#include <ceres/rotation.h>
-#include <glog/logging.h>
+
 using ceres::AutoDiffCostFunction;
 using ceres::CostFunction;
 using ceres::Problem;
 using ceres::Solve;
 using ceres::Solver;
 
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/imgcodecs.hpp>
-
-#include <vector>
-
+namespace rssync {
 struct Normal2dResidual {
     template <typename T>
     bool operator()(const T* ampl, const T* const center, const T* sigma, const T* alpha,
@@ -24,7 +20,7 @@ struct Normal2dResidual {
         residual[0] = ampl[0] * exp(-xr2 / sigma[0]) * exp(-yr2 / sigma[1]);
         residual[0] -= z_;
 
-        T d = xr2 / sigma[0] + yr2 / sigma[1];
+        T d = xr2 + yr2;
         residual[0] *= 1. - 1. / (1. + exp(-d));
 
         return true;
@@ -42,38 +38,15 @@ struct Normal2dResidual {
     double z_{};
 };
 
-class NormalModel {
+class NormalFitterImpl : public INormalFitter {
    public:
-    NormalModel(double a, double cx, double cy, double sx, double sy, double alpha)
-        : a_{a}, cx_{cx}, cy_{cy}, sx_{sx}, sy_{sy}, alpha_{alpha} {}
+    void ContextLoaded(std::weak_ptr<BaseComponent> self) override {}
 
-    double Evaluate(double x, double y) const {
-        double xr = (x - cx_) * cos(alpha_) - (y - cy_) * sin(alpha_);
-        double yr = (x - cy_) * sin(alpha_) + (y - cy_) * cos(alpha_);
-        double xr2 = xr * xr, yr2 = yr * yr;
-        double d = xr2 + yr2;
-
-        return a_ * exp(-xr2 / sx_) * exp(-yr2 / sy_);
-    }
-
-    void GetCenter(double& cx, double& cy) const {
-        cx = cx_;
-        cy = cy_;
-    }
-
-   private:
-    const double cx_, cy_;
-    const double sx_, sy_;
-    const double a_, alpha_;
-};
-
-class NormalFitter {
-   public:
-    NormalModel Fit(const cv::Mat& img) {
+    NormalModel Fit(const cv::Mat& img, double offset) override {
         FillProblem(img);
         Solver::Summary summary;
         Solve(options_, &problem_, &summary);
-        return {A_, center_[0], center_[1], sigma_[0], sigma_[1], alpha_};
+        return {A_, center_[0], center_[1], sigma_[0], sigma_[1], alpha_, offset};
     }
 
    private:
@@ -98,8 +71,10 @@ class NormalFitter {
         problem_.SetParameterUpperBound(center_, 0, cur_width_);
         problem_.SetParameterLowerBound(center_, 1, 0.);
         problem_.SetParameterUpperBound(center_, 1, cur_height_);
-        problem_.SetParameterLowerBound(&alpha_, 0, 0.);
-        problem_.SetParameterUpperBound(&alpha_, 0, 2. * M_PI);
+        problem_.SetParameterLowerBound(sigma_, 0, 1e-3);
+        problem_.SetParameterLowerBound(sigma_, 1, 1e-3);
+        // problem_.SetParameterLowerBound(&alpha_, 0, 0.);
+        // problem_.SetParameterUpperBound(&alpha_, 0, 2. * M_PI);
 
         options_.max_num_iterations = 8;
         options_.linear_solver_type = ceres::DENSE_QR;
@@ -120,7 +95,7 @@ class NormalFitter {
         ConstructProblem(img.cols, img.rows);
         for (int j = 0; j < cur_height_; ++j) {
             for (int i = 0; i < cur_width_; ++i) {
-                double z = img.at<uchar>(j, i) / 255.;
+                double z = img.at<float>(j, i);
                 residuals_[i + j * cur_width_]->SetXYZ(i, j, z);
             }
         }
@@ -136,30 +111,8 @@ class NormalFitter {
     int cur_width_{-1}, cur_height_{-1};
 };
 
-int main(int argc, char** argv) {
-    google::InitGoogleLogging(argv[0]);
-
-    cv::Point max_loc;
-    cv::Mat data = cv::imread(argv[1]);
-    cv::cvtColor(data, data, cv::COLOR_BGR2GRAY);
-    data = 255 - data;
-    cv::minMaxLoc(data, nullptr, nullptr, nullptr, &max_loc);
-    cv::imwrite("a.jpg", data);
-
-    NormalFitter fitter;
-
-    for (int i = 0; i < 1000; ++i) {
-        fitter.Fit(data);
-    }
-    // std::cout << summary.BriefReport() << "\n";
-
-    cv::resize(data, data, data.size() * 8, cv::INTER_CUBIC);
-    data = 255 - data;
-    cv::cvtColor(data, data, cv::COLOR_GRAY2BGR);
-
-    // cv::circle(data, cv::Point(center[0] * 8, center[1] * 8), 3, cv::Scalar(127, 127, 0));
-
-    cv::imwrite("b.jpg", data);
-
-    return 0;
+void RegisterNormalFitter(std::shared_ptr<IContext> ctx, std::string name) {
+    RegisterComponent<NormalFitterImpl>(ctx, name);
 }
+
+}  // namespace rssync

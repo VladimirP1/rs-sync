@@ -5,9 +5,12 @@
 #include <vision/camera_model.hpp>
 #include <vision/utils.hpp>
 
+#include <iostream>
+
 #include "frame_loader.hpp"
 #include "pair_storage.hpp"
 #include "calibration_provider.hpp"
+#include "normal_fitter.hpp"
 
 namespace rssync {
 class CorrelatorImpl : public ICorrelator {
@@ -17,6 +20,7 @@ class CorrelatorImpl : public ICorrelator {
         pair_storage_ = ctx_.lock()->GetComponent<IPairStorage>(kPairStorageName);
         calibration_provider_ =
             ctx_.lock()->GetComponent<ICalibrationProvider>(kCalibrationProviderName);
+        normal_fitter_ = ctx_.lock()->GetComponent<INormalFitter>(kNormalFitterName);
     }
 
     void SetPatchSizes(cv::Size dst_a, cv::Size dst_b) override {
@@ -48,10 +52,12 @@ class CorrelatorImpl : public ICorrelator {
         Pb.col(3) = desc.t * 1.;
 
         // Resize destination arrays
-        desc.correlations.resize(desc.points4d.cols);
+        desc.correlation_models.resize(desc.points4d.cols);
         desc.patch_transforms.resize(desc.points4d.cols);
-        desc.corr_gradients.resize(desc.points4d.cols);
-        if (desc.enable_debug) desc.debug_patches.resize(desc.points4d.cols);
+        if (desc.enable_debug) {
+            desc.debug_correlations.resize(desc.points4d.cols);
+            desc.debug_patches.resize(desc.points4d.cols);
+        }
 
         for (int i = 0; i < desc.points4d.cols; ++i) {
             // Only process good points
@@ -107,18 +113,35 @@ class CorrelatorImpl : public ICorrelator {
             // Compute correlation map between reprojected patches
             cv::Mat correlation_map;
             cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_CCORR_NORMED);
-            correlation_map = 1. - correlation_map;
 
-            // Compute gradients of the correlation map
-            cv::Mat corr_gradients[2], corr_gradient;
-            cv::Sobel(correlation_map, corr_gradients[0], CV_32F, 1, 0);
-            cv::Sobel(correlation_map, corr_gradients[1], CV_32F, 0, 1);
-            cv::merge(corr_gradients, 2, corr_gradient);
+            // Correlation map minus its minimum
+            cv::Mat shifted_corr_map = correlation_map.clone();
+            double corr_min;
+            cv::Point corr_max_loc;
+            cv::minMaxLoc(shifted_corr_map, &corr_min, nullptr, nullptr, &corr_max_loc);
+            shifted_corr_map -= static_cast<float>(corr_min);
 
-            desc.correlations[i] = correlation_map;
+            // Fit 2d normal distribution to corr map
+            NormalModel model = normal_fitter_->Fit(shifted_corr_map, corr_min);
+
+            // Check if model center is near maximum
+            double cx, cy;
+            model.GetCenter(cx, cy);
+            if (pow(corr_max_loc.x - cx, 2) + pow(corr_max_loc.y - cy, 2) > 3) {
+                desc.mask_correlation[i] = false;
+                continue;
+            }
+
+            // Shift image center in model to 0,0
+            model.ShiftOrigin(-correlation_map.cols / 2., -correlation_map.rows / 2.);
+
+            desc.corr_valid_radius = (correlation_map.rows + correlation_map.cols) / 4.;
+            desc.correlation_models[i] = model;
             desc.patch_transforms[i] = {offset_map_a, offset_map_b};
-            desc.corr_gradients[i] = corr_gradient;
-            if (desc.enable_debug) desc.debug_patches[i] = {patch_a, patch_b};
+            if (desc.enable_debug) {
+                desc.debug_correlations[i] = correlation_map;
+                desc.debug_patches[i] = {patch_a, patch_b};
+            }
         }
 
         desc.has_correlations = true;
@@ -216,6 +239,7 @@ class CorrelatorImpl : public ICorrelator {
     std::shared_ptr<IFrameLoader> frame_loader_;
     std::shared_ptr<IPairStorage> pair_storage_;
     std::shared_ptr<ICalibrationProvider> calibration_provider_;
+    std::shared_ptr<INormalFitter> normal_fitter_;
 
     cv::Size dst_patch_size_a_{20, 20}, dst_patch_size_b_{17, 17};
 };

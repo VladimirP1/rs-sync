@@ -32,7 +32,7 @@ class VisualizerImpl : public IVisualizer {
         for (int i = 0; i < ids.size(); ++i) {
             cv::circle(frame, pts[i], 5, GetColor(ids[i]), 3);
             if (desc.has_pose && desc.mask_essential[i]) {
-                cv::circle(frame, pts[i], 12, cv::Scalar(0,0,255), 4);
+                cv::circle(frame, pts[i], 12, cv::Scalar(0, 0, 255), 4);
             }
         }
     }
@@ -60,19 +60,27 @@ class VisualizerImpl : public IVisualizer {
         }
 
         int target_w{}, target_h{};
-        for (int i = 0; i < desc.correlations.size(); ++i) {
+        for (int i = 0; i < desc.correlation_models.size(); ++i) {
             if (desc.mask_correlation[i]) {
-                cv::Mat grad_col;
-                CorrelationToColor(desc.correlations[i], grad_col, cv::COLORMAP_DEEPGREEN);
-                auto corr_size = grad_col.size();
-                auto patch_size_a = desc.debug_patches.empty() ? cv::Size(0, 0)
-                                                               : desc.debug_patches[i].first.size();
-                auto patch_size_b = desc.debug_patches.empty() ? cv::Size(0, 0)
-                                                               : desc.debug_patches[i].first.size();
-                target_w =
-                    std::max(corr_size.width, std::max(patch_size_a.width, patch_size_b.width));
-                target_h =
-                    std::max(corr_size.height, std::max(patch_size_a.height, patch_size_b.height));
+                if (desc.debug_correlations.size()) {
+                    cv::Mat grad_col;
+                    CorrelationToColor(desc.debug_correlations[i], grad_col,
+                                       cv::COLORMAP_DEEPGREEN);
+                    auto corr_size = grad_col.size();
+                    auto patch_size_a = desc.debug_patches.empty()
+                                            ? cv::Size(0, 0)
+                                            : desc.debug_patches[i].first.size();
+                    auto patch_size_b = desc.debug_patches.empty()
+                                            ? cv::Size(0, 0)
+                                            : desc.debug_patches[i].first.size();
+                    target_w =
+                        std::max(corr_size.width, std::max(patch_size_a.width, patch_size_b.width));
+                    target_h = std::max(corr_size.height,
+                                        std::max(patch_size_a.height, patch_size_b.height));
+                } else {
+                    int model_size = desc.corr_valid_radius * 2 * 6;
+                    target_w = target_h = model_size;
+                }
                 break;
             }
         }
@@ -101,13 +109,19 @@ class VisualizerImpl : public IVisualizer {
                 auto base_row = j * target_h * 2;
                 auto base_col = i * target_w * 3;
                 auto corr_roi = cv::Rect(base_col, base_row, target_w, target_h);
-                auto gradx_roi = cv::Rect(base_col + target_w, base_row, target_w, target_h);
-                auto grady_roi =
-                    cv::Rect(base_col + target_w * 2, base_row, target_w, target_h);
-                auto grad_roi =
+                auto corr_model_roi = cv::Rect(base_col + target_w, base_row, target_w, target_h);
+                auto none0_roi = cv::Rect(base_col + target_w * 2, base_row, target_w, target_h);
+                auto none1_roi =
                     cv::Rect(base_col + target_w * 2, base_row + target_h, target_w, target_h);
                 auto a_roi = cv::Rect(base_col, base_row + target_h, target_w, target_h);
                 auto b_roi = cv::Rect(base_col + target_w, base_row + target_h, target_w, target_h);
+
+                cv::Mat grad_col, tmp;
+                double tx, ty;
+                
+                NormalModel model = desc.correlation_models[k];
+                model.ShiftOrigin(desc.corr_valid_radius, desc.corr_valid_radius);
+                model.GetCenter(tx, ty);
 
                 if (!desc.debug_patches.empty()) {
                     cv::Mat_<double> affine(2, 3, CV_64F);
@@ -120,22 +134,21 @@ class VisualizerImpl : public IVisualizer {
                     affine << 2, 0, (a_roi.height - src_size.height) / 2., 0, 2.,
                         (a_roi.width - src_size.width) / 2.;
                     cv::warpAffine(desc.debug_patches[k].second, out(b_roi), affine, b_roi.size());
+
+                    CorrelationToColor(desc.debug_correlations[k], grad_col, cv::COLORMAP_MAGMA);
+                    cv::circle(grad_col, cv::Point((tx + .5) * 6, (ty + .5) * 6), 1,
+                               cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+                    cv::resize(grad_col, out(corr_roi), corr_roi.size());
                 }
 
-                cv::Mat grad_col, tmp;
-                CorrelationToColor(desc.correlations[k], grad_col, cv::COLORMAP_MAGMA);
-                cv::resize(grad_col, out(corr_roi), corr_roi.size());
+                ComputeNormalImage(
+                    tmp, model,
+                    cv::Size(desc.corr_valid_radius * 2, desc.corr_valid_radius * 2));
+                CorrelationToColor(tmp, grad_col, cv::COLORMAP_MAGMA);
+                cv::circle(grad_col, cv::Point((tx + .5) * 6, (ty + .5) * 6), 1,
+                           cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+                cv::resize(grad_col, out(corr_model_roi), corr_model_roi.size());
 
-                cv::extractChannel(desc.corr_gradients[k], tmp, 0);
-                CorrelationToColor(tmp, grad_col, cv::COLORMAP_OCEAN);
-                cv::resize(grad_col, out(gradx_roi), gradx_roi.size());
-
-                cv::extractChannel(desc.corr_gradients[k], tmp, 1);
-                CorrelationToColor(tmp, grad_col, cv::COLORMAP_OCEAN);
-                cv::resize(grad_col, out(grady_roi), grady_roi.size());
-
-                CorrelationGradToColor(desc.corr_gradients[k], grad_col);
-                cv::resize(grad_col, out(grad_roi), grad_roi.size());
                 ++k;
             }
         }
@@ -154,6 +167,15 @@ class VisualizerImpl : public IVisualizer {
         {249, 65, 68},   {243, 114, 44}, {248, 150, 30}, {249, 132, 74}, {249, 199, 79},
         {144, 190, 109}, {67, 170, 139}, {77, 144, 142}, {87, 117, 144}, {39, 125, 161}};
 
+    void ComputeNormalImage(cv::Mat& out, NormalModel model, cv::Size size) {
+        out.create(size, CV_32FC1);
+        for (int i = 0; i < out.rows; ++i) {
+            for (int j = 0; j < out.cols; ++j) {
+                out.at<float>(i, j) = model.Evaluate(j, i);
+            }
+        }
+    }
+
     void CorrelationGradToColor(const cv::Mat& correlation, cv::Mat& colorized) {
         colorized = cv::Mat::zeros(correlation.rows, correlation.cols, CV_8UC3);
         for (int i = 0; i < correlation.rows; ++i) {
@@ -162,7 +184,7 @@ class VisualizerImpl : public IVisualizer {
                 auto angle = atan2(grad[1], grad[0]);
                 uchar hue = angle * 255. / M_PI;
                 colorized.at<cv::Vec3b>(i, j) = {hue, 255, 127};
-                std::cout <<(int) hue << std::endl;
+                // std::cout <<(int) hue << std::endl;
             }
         }
         cv::cvtColor(colorized, colorized, cv::COLOR_HSV2BGR);

@@ -7,6 +7,8 @@
 
 #include <opencv2/core.hpp>
 
+#include "normal_fitter.hpp"
+
 namespace rssync {
 void RegisterPairStorage(std::shared_ptr<IContext> ctx, std::string name);
 
@@ -18,9 +20,11 @@ struct PairDescription {
     std::vector<uchar> mask_essential, mask_4d, mask_correlation;
     cv::Mat_<double> R, t, points4d;
 
-    std::vector<cv::Mat> correlations;
-    std::vector<cv::Mat> corr_gradients;
+    double corr_valid_radius{};
+    std::vector<NormalModel> correlation_models;
     std::vector<std::pair<cv::Mat, cv::Mat>> patch_transforms;
+
+    std::vector<cv::Mat> debug_correlations;
     std::vector<std::pair<cv::Mat, cv::Mat>> debug_patches;
 
     bool enable_debug{};

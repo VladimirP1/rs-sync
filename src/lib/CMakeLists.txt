@@ -35,10 +35,11 @@ set( LIBBL_SOURCES
     bl/pose_estimator.cpp 
     bl/calibration_provider.cpp 
     bl/visualizer.cpp
+    bl/normal_fitter.cpp
 bl/correlator.cpp
 )
 
 add_library(libbl ${LIBBL_SOURCES})
 target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(libbl PUBLIC libds)
+target_link_libraries(libbl PUBLIC libds libvision libmath Ceres::ceres)
 install(TARGETS libbl)
