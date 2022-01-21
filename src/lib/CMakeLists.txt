@@ -8,6 +8,7 @@ install(TARGETS libvision)
 
 add_library(libmath INTERFACE)
 target_include_directories(libmath INTERFACE ${CMAKE_CURRENT_LIST_DIR})
+target_link_libraries(libmath INTERFACE Ceres::ceres)
 install(TARGETS libmath)
 
 # -----
