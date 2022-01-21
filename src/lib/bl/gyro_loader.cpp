@@ -22,7 +22,7 @@ class GyroLoaderImpl : public IGyroLoader {
         // TODO: use timestamps
         std::vector<double> timestamps;
         std::vector<std::tuple<double, double, double>> rvs;
-        std::vector<Quaternion> quaternions;
+        std::vector<QuatT> quaternions;
 
         ReadGyroCsv(in, timestamps, rvs);
 
@@ -31,7 +31,8 @@ class GyroLoaderImpl : public IGyroLoader {
         std::cout << "Sample rate:" << smplrate_ << std::endl;
 
         for (auto &[x, y, z] : rvs) {
-            quaternions.emplace_back(x / smplrate_, y / smplrate_, z / smplrate_);
+            quaternions.push_back(
+                QuatT{{x / smplrate_, 0}, {y / smplrate_, 1}, {z / smplrate_, 2}});
         }
 
         gyro_ = GyroDsT(quaternions.begin(), quaternions.end());
@@ -40,11 +41,13 @@ class GyroLoaderImpl : public IGyroLoader {
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {}
 
     Quaternion GetRotation(double from_sec, double to_sec) const override {
-        return gyro_.SoftQuery(from_sec * smplrate_, to_sec * smplrate_);
+        return gyro_.SoftQuery(from_sec * smplrate_, to_sec * smplrate_).Bias(0, 0, 0);
     }
 
    private:
-    using GyroDsT = Interpolated<PrefixSums<QuaternionGroup>>;
+    using QuatT = GenericQuaternion<ceres::Jet<double, 3>>;
+    using QuatGroupT = GenericQuaternionGroup<ceres::Jet<double, 3>>;
+    using GyroDsT = Interpolated<PrefixSums<QuatGroupT>>;
     GyroDsT gyro_;
     double smplrate_{};
 };
