@@ -6,12 +6,6 @@ FROM index.docker.io/library/ubuntu:latest
 
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
      && apt-get -y install --no-install-recommends \
-     vim clangd-12 liblldb-12-dev git
+     vim git cmake build-essential ca-certificates python3-pip
 
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-     && apt-get -y install --no-install-recommends \
-     cmake libgoogle-glog-dev libgflags-dev libatlas-base-dev libeigen3-dev
-
-RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-     && apt-get -y install --no-install-recommends \
-     libopencv-dev build-essential ca-certificates
+RUN pip3 install conan
