@@ -60,7 +60,7 @@ class OpenCVConan(ConanFile):
         "with_openexr": True,
         "with_eigen": True,
         "with_webp": True,
-        "with_gtk": True,
+        "with_gtk": False,
         "with_quirc": True,
         "with_cuda": False,
         "with_cublas": False,
