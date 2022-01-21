@@ -11,13 +11,12 @@ using ceres::Solver;
 namespace rssync {
 struct Normal2dResidual {
     template <typename T>
-    bool operator()(const T* ampl, const T* const center, const T* sigma, const T* alpha,
-                    T* residual) const {
-        T xr = (x_ - center[0]) * cos(*alpha) - (y_ - center[1]) * sin(*alpha);
-        T yr = (x_ - center[0]) * sin(*alpha) + (y_ - center[1]) * cos(*alpha);
+    bool operator()(const T* ampl, const T* const center, const T* sigma, T* residual) const {
+        T xr = (x_ - center[0]) * cos(ampl[2]) - (y_ - center[1]) * sin(ampl[2]);
+        T yr = (x_ - center[0]) * sin(ampl[2]) + (y_ - center[1]) * cos(ampl[2]);
         T xr2 = xr * xr, yr2 = yr * yr;
 
-        residual[0] = ampl[0] * exp(-xr2 / sigma[0]) * exp(-yr2 / sigma[1]);
+        residual[0] = ampl[0] * exp(-xr2 / sigma[0]) * exp(-yr2 / sigma[1]) + ampl[1];
         residual[0] -= z_;
 
         T d = xr2 + yr2;
@@ -46,7 +45,7 @@ class NormalFitterImpl : public INormalFitter {
         FillProblem(img);
         Solver::Summary summary;
         Solve(options_, &problem_, &summary);
-        return {A_, center_[0], center_[1], sigma_[0], sigma_[1], alpha_, offset};
+        return {A_[0], center_[0], center_[1], sigma_[0], sigma_[1], A_[2], A_[1] + offset};
     }
 
    private:
@@ -60,8 +59,8 @@ class NormalFitterImpl : public INormalFitter {
             for (int i = 0; i < width; ++i) {
                 residuals_.push_back(new Normal2dResidual());
                 CostFunction* cost_function =
-                    new AutoDiffCostFunction<Normal2dResidual, 1, 1, 2, 2, 1>(residuals_.back());
-                problem_.AddResidualBlock(cost_function, nullptr, &A_, center_, sigma_, &alpha_);
+                    new AutoDiffCostFunction<Normal2dResidual, 1, 3, 2, 2>(residuals_.back());
+                problem_.AddResidualBlock(cost_function, nullptr, A_, center_, sigma_);
             }
         }
         cur_width_ = width;
@@ -76,9 +75,10 @@ class NormalFitterImpl : public INormalFitter {
         // problem_.SetParameterLowerBound(&alpha_, 0, 0.);
         // problem_.SetParameterUpperBound(&alpha_, 0, 2. * M_PI);
 
-        options_.max_num_iterations = 8;
+        options_.max_num_iterations = 5;
         options_.linear_solver_type = ceres::DENSE_QR;
         options_.use_inner_iterations = false;
+        // options_.use_nonmonotonic_steps = true;
         options_.logging_type = ceres::SILENT;
         // options_.minimizer_progress_to_stdout = true;
     }
@@ -86,11 +86,13 @@ class NormalFitterImpl : public INormalFitter {
     void FillProblem(const cv::Mat& img) {
         cv::Point max_loc;
         cv::minMaxLoc(img, nullptr, nullptr, nullptr, &max_loc);
-        A_ = 1.;
-        alpha_ = 0.;
+        A_[0] = 1.;
+        A_[1] = 0.;
+        A_[2] = 0.;
         center_[0] = max_loc.x * 1.;
         center_[1] = max_loc.y * 1.;
-        sigma_[0] = sigma_[1] = 1.;
+        sigma_[0] = 1.;
+        sigma_[1] = 2.;
 
         ConstructProblem(img.cols, img.rows);
         for (int j = 0; j < cur_height_; ++j) {
@@ -104,7 +106,7 @@ class NormalFitterImpl : public INormalFitter {
    private:
     Problem problem_;
     Solver::Options options_;
-    double A_, alpha_;
+    double A_[3];
     double center_[2];
     double sigma_[2];
     std::vector<Normal2dResidual*> residuals_;

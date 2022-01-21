@@ -33,8 +33,8 @@ class CorrelatorImpl : public ICorrelator {
         if (pair_storage_->Get(frame_number, desc); !desc.has_pose || !desc.has_points4d)
             return false;
 
-        desc.mask_correlation = desc.mask_essential;
-        std::fill(desc.mask_correlation.begin(), desc.mask_correlation.end(), 1);
+        desc.mask_correlation = desc.mask_4d;
+        // std::fill(desc.mask_correlation.begin(), desc.mask_correlation.end(), 1);
 
         FisheyeCalibration calibration = calibration_provider_->GetCalibraiton();
         if (!calibration.IsLoaded()) return false;
@@ -112,7 +112,7 @@ class CorrelatorImpl : public ICorrelator {
 
             // Compute correlation map between reprojected patches
             cv::Mat correlation_map;
-            cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_CCORR_NORMED);
+            cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_CCOEFF_NORMED);
 
             // Correlation map minus its minimum
             cv::Mat shifted_corr_map = correlation_map.clone();

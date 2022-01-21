@@ -36,7 +36,7 @@ class IPairStorage : public rssync::BaseComponent {
     virtual void Update(int frame, const PairDescription& desc) = 0;
     virtual bool Get(int frame, PairDescription& desc) = 0;
     virtual bool Drop(int frame) = 0;
-    virtual void GetFramesWith(std::vector<int> out, bool points, bool undistorted, bool pose,
+    virtual void GetFramesWith(std::vector<int>& out, bool points, bool undistorted, bool pose,
                                bool points4d, bool correlations) = 0;
 };
 

@@ -187,7 +187,7 @@ class OpticalFlowLK : public IOpticalFlow {
     LruCache<int, KeypointInfo> keypoint_cache_{kCacheSize};
     std::mutex cache_mutex_;
 
-    int min_corners_{70};
+    int min_corners_{150};
     int max_corners_{700};
     double discard_threshold_scale_{1e-3};
 };

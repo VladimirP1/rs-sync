@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <ostream>
+#include <string>
 
 class QuaternionGroup;
 
@@ -28,12 +30,12 @@ class Quaternion {
         data_[3] = d;
     }
 
-    double Norm() {
+    double Norm() const {
         return std::sqrt(data_[0] * data_[0] + data_[1] * data_[1] +
                          data_[2] * data_[2] + data_[3] * data_[3]);
     }
 
-    void ToRotVec(double& rx, double& ry, double& rz) {
+    void ToRotVec(double& rx, double& ry, double& rz) const {
         auto cos = data_[0];
         auto sin_norm = std::sqrt(data_[1] * data_[1] + data_[2] * data_[2] +
                                   data_[3] * data_[3]);
@@ -50,13 +52,21 @@ class Quaternion {
    private:
     double data_[4];
 
-    double SinxInvx(double x) {
+    double SinxInvx(double x) const {
         if (std::fabs(x) < eps) {
             return 1.;
         }
         return std::sin(x) / x;
     }
 };
+
+inline std::ostream& operator<<(std::ostream& s, const Quaternion& q) {
+    double x,y,z;
+    q.ToRotVec(x, y, z);
+    double norm = sqrt(x*x+y*y+z*z);
+    s << "[Rotation " << norm * 180. / M_PI << "; " << x << " " << y << " " << z << "]";
+    return s;
+}
 
 struct QuaternionGroup {
     typedef Quaternion value_type;

@@ -4,7 +4,7 @@
 #include <string>
 
 bool ReadGyroCsv(std::istream& s, std::vector<double>& timestamps,
-                 std::vector<Quaternion>& quaternions) {
+                 std::vector<std::tuple<double, double, double>>& rvs) {
     std::string line;
     // Parse header
     struct {
@@ -57,16 +57,12 @@ bool ReadGyroCsv(std::istream& s, std::vector<double>& timestamps,
             idx++;
         }
         // std::cout << line << std::endl;
-        static constexpr double kGyroScale = M_PI / 180. / 1e6;
+        static constexpr double kGyroScale = M_PI / 180.;
         static constexpr double kTimeScale = 1e-6;
         ts *= kTimeScale;
-        Quaternion q{ry * kGyroScale, rz * kGyroScale, rx * kGyroScale};
 
         timestamps.push_back(ts);
-        quaternions.push_back(q);
-
-        //  std::cout << q.Norm() << std::endl;
-        // std::cout << ts << " " << rx << " " << ry << " " << rz << std::endl;
+        rvs.emplace_back(ry * kGyroScale, rz * kGyroScale, -rx * kGyroScale);
     }
     return true;
 }

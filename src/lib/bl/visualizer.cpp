@@ -192,11 +192,11 @@ class VisualizerImpl : public IVisualizer {
 
     void CorrelationToColor(const cv::Mat& correlation, cv::Mat& colorized, cv::ColormapTypes t) {
         auto ucorr = correlation.clone();
-        ucorr = cv::abs(ucorr);
+        // ucorr = cv::abs(ucorr);
         double min, max;
         cv::minMaxLoc(ucorr, &min, &max);
         ucorr -= min;
-        ucorr /= (max - min);
+        // ucorr /= (max - min);
         ucorr.convertTo(ucorr, CV_8UC1, 255);
         cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);
         cv::resize(ucorr, ucorr, ucorr.size() * 6, 0, 0, cv::INTER_CUBIC);

@@ -19,8 +19,8 @@ set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-point
 
 # ---- Executable targets ----
 
-add_executable(segtree segtree.cpp)
-target_link_libraries(segtree libmath libio)
+# add_executable(segtree segtree.cpp)
+# target_link_libraries(segtree libmath libio)
 
 # -----
 

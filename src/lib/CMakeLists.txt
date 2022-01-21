@@ -21,7 +21,7 @@ install(TARGETS libio)
 
 add_library(libds INTERFACE)
 target_include_directories(libds INTERFACE ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(libds INTERFACE libmath libvision)
+target_link_libraries(libds INTERFACE libmath libvision libio)
 install(TARGETS libds)
 
 # -----
@@ -36,6 +36,7 @@ set( LIBBL_SOURCES
     bl/calibration_provider.cpp 
     bl/visualizer.cpp
     bl/normal_fitter.cpp
+    bl/gyro_loader.cpp
 bl/correlator.cpp
 )
 

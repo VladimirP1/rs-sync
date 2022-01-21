@@ -28,7 +28,7 @@ class PairStorageImpl : public IPairStorage {
         return data_.erase(frame);
     }
 
-    void GetFramesWith(std::vector<int> out, bool points, bool undistorted, bool pose,
+    void GetFramesWith(std::vector<int>& out, bool points, bool undistorted, bool pose,
                        bool points4d, bool correlations) override {
         std::unique_lock<std::mutex> lock{mtx_};
         for (auto& [k, v] : data_) {
