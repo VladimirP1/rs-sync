@@ -29,11 +29,6 @@ target_link_libraries(t libds libbl)
 install(TARGETS t)
 
 # -----
-add_executable(ceres_test ceres_test.cpp)
-target_link_libraries(ceres_test Ceres::ceres)
-install(TARGETS ceres_test)
-
-# -----
 add_executable(ceres_test2 ceres_test2.cpp)
 target_link_libraries(ceres_test2 Ceres::ceres opencv::opencv)
 install(TARGETS ceres_test2)
