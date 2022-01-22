@@ -59,29 +59,28 @@ class GyroRoughCorrelator : public BaseComponent {
         Matrix<double, 3, 1> best_bias;
         for (double shift = -.5; shift < .5; shift += 1e-4) {
             double cost = 0;
-
-            Quaternion<double> bias = Quaternion<double>::Identity();
+            Matrix<double,3,1> bias_v = {0,0,0};
             for (auto frame_info : data) {
                 auto of_rot = std::get<2>(frame_info);
                 auto gyro_rot = gyro_loader_->GetRotation(std::get<0>(frame_info) + shift,
                                                           std::get<1>(frame_info) + shift);
 
                 auto error = gyro_rot * of_rot.inverse();
-                auto bv = GetBiasForOffset(error) / data.size();
-                bias = Quaternion<double>::FromRotationVector(bv) * bias;
+                bias_v += GetBiasForOffset(error);
             }
 
-            auto bias_v = bias.ToRotationVector();
+            bias_v /= data.size();
+
             for (auto frame_info : data) {
                 double x, y, z;
                 auto of_rot = std::get<2>(frame_info);
                 auto gyro_rot = gyro_loader_->GetRotation(std::get<0>(frame_info) + shift,
                                                           std::get<1>(frame_info) + shift);
 
-                // of_rot.ToRotVec(x, y, z);
-                // out << x << "," << y << "," << z << ",";
-                // gyro_rot.ToRotVec(x, y, z);
-                // out << x << "," << y << ","<< z << ",";
+                // auto ov = of_rot.ToRotationVector();
+                // out << ov.x().a << "," << ov.y().a << "," << ov.z().a << ",";
+                // auto gv = Bias(gyro_rot, bias_v).ToRotationVector();
+                // out << gv.x() << "," << gv.y() << "," << gv.z() << ",";
 
                 auto residual =
                     (Bias(gyro_rot, bias_v) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
@@ -156,7 +155,7 @@ int main() {
         // desc.t.at<double>(2) << std::endl;
         PairDescription desc;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        desc.enable_debug = false;
+        desc.enable_debug = true;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
         ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
