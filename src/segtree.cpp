@@ -7,14 +7,38 @@
 #include <string>
 #include <vector>
 
-#include <io/bb_csv.hpp>
-
-#include <math/simple_math.hpp>
-#include <ds/prefix_sums.hpp>
-#include <ds/segment_tree.hpp>
-#include <ds/range_interpolated.hpp>
+#include <math/quaternion.hpp>
 
 int main(int argc, char** argv) {
+    // auto q0 = Quaternion<ceres::Jet<double, 3>>::FromRotationVector({0, 0}, {0, 1}, {0, 2});
+
+    // std::cout << q0 << std::endl;
+    // std::cout << (q0 * q0) << std::endl;
+
+    // ceres::Jet<double, 3> x, y, z;
+    // q0.ToRotationVector(x, y, z);
+    // std::cout << x << " " << y << " " << z << std::endl;
+
+    // QuaternionGroup<decltype(q0)> g;
+    // g.unit();
+    // q0 = g.add(q0, q0);
+    // q0 = g.inv(q0);
+    // q0 = g.mult(q0, 1);
+
+    auto q0 = Quaternion<ceres::Jet<double, 3>>::FromRotationVector({{0, 0}, {0, 1}, {0, 2}});
+    auto q1 = Quaternion<ceres::Jet<double, 3>>::FromRotationVector(
+        {Jet<double, 3>{.01}, Jet<double, 3>{0}, Jet<double, 3>{0}});
+
+    auto b = GetBiasForOffset(q1 * q0);
+    std::cout << b << std::endl;
+
+    std::cout << Bias(q1 * q0, b) << std::endl;
+
+    // double x, y, z;
+    // Bias(q1*q0,bx,by,bz).ToRotationVector(x, y, z);
+    // std::cout << x << " " << y << " " << z << std::endl;
+
+    /*
     using GQ = GenericQuaternion<ceres::Jet<double, 3>>;
     using GQG = GenericQuaternionGroup<ceres::Jet<double, 3>>;
     using Q = Quaternion;
@@ -48,13 +72,10 @@ int main(int argc, char** argv) {
 
     std::cout << size * bx << " " << size * by << " " << size * bz << std::endl;
 
-    std::cout << fabs(size * bx / 50) << std::endl;
-    // QuaternionJet j(ceres::Jet<double,4>(1, 0),ceres::Jet<double,4>(1),ceres::Jet<double,4>(1));
-    // QuaternionGroupJet g;
-    // auto q = g.unit();
-    // std::cout << q << std::endl;
-    // ceres::Jet<double, 4> x,y,z;
-    // q.ToRotVec(x,y,z);
+    std::cout << fabs(size * bx / 50) << std::endl;*/
+    // QuaternionJet j(ceres::Jet<double,4>(1,
+    // 0),ceres::Jet<double,4>(1),ceres::Jet<double,4>(1)); QuaternionGroupJet g; auto q =
+    // g.unit(); std::cout << q << std::endl; ceres::Jet<double, 4> x,y,z; q.ToRotVec(x,y,z);
 
     return 0;
 }

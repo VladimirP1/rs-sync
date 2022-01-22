@@ -39,22 +39,39 @@ class GyroRoughCorrelator : public BaseComponent {
         pair_storage_->GetFramesWith(good_frames, false, false, true, false, false);
         std::sort(good_frames.begin(), good_frames.end());
 
-        QuaternionGroup grp;
+        QuaternionGroup<Quaternion<Jet<double, 3>>> grp;
         cv::Mat_<double> rv;
         PairDescription desc;
-        std::vector<std::tuple<double, double, Quaternion, double>> data;
+        std::vector<std::tuple<double, double, Quaternion<Jet<double, 3>>, double>> data;
         for (auto frame : good_frames) {
             pair_storage_->Get(frame, desc);
             cv::Rodrigues(desc.R, rv);
-            data.emplace_back(desc.timestamp_a, desc.timestamp_b, Quaternion{rv(0), rv(1), rv(2)},
-                              desc.points_a.size());
+            data.emplace_back(
+                desc.timestamp_a, desc.timestamp_b,
+                Quaternion<Jet<double, 3>>::FromRotationVector(
+                    {Jet<double, 3>{rv(0)}, Jet<double, 3>{rv(1)}, Jet<double, 3>{rv(2)}}),
+                desc.points_a.size());
             std::cout << desc.timestamp_a << desc.timestamp_b << std::endl;
         }
 
         double min_cost = std::numeric_limits<double>::max();
         double best_shift = 0.;
+        Matrix<double, 3, 1> best_bias;
         for (double shift = -.5; shift < .5; shift += 1e-4) {
             double cost = 0;
+
+            Quaternion<double> bias = Quaternion<double>::Identity();
+            for (auto frame_info : data) {
+                auto of_rot = std::get<2>(frame_info);
+                auto gyro_rot = gyro_loader_->GetRotation(std::get<0>(frame_info) + shift,
+                                                          std::get<1>(frame_info) + shift);
+
+                auto error = gyro_rot * of_rot.inverse();
+                auto bv = GetBiasForOffset(error) / data.size();
+                bias = Quaternion<double>::FromRotationVector(bv) * bias;
+            }
+
+            auto bias_v = bias.ToRotationVector();
             for (auto frame_info : data) {
                 double x, y, z;
                 auto of_rot = std::get<2>(frame_info);
@@ -66,17 +83,18 @@ class GyroRoughCorrelator : public BaseComponent {
                 // gyro_rot.ToRotVec(x, y, z);
                 // out << x << "," << y << ","<< z << ",";
 
-                grp.add(grp.inv(gyro_rot), of_rot).ToRotVec(x, y, z);
-                double residual = x * x + y * y + z * z;
+                auto residual =
+                    (Bias(gyro_rot, bias_v) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
                 cost += log(1. + residual * 100.);
                 // out << std::get<3>(frame_info) << "\n";
             }
-            out << shift << "," << cost/data.size() << "\n" << std::endl;
+            out << shift << "," << cost / data.size() << "\n" << std::endl;
             // break;
             // std::cout << cost/data.size() << " " << shift << std::endl;
             if (cost / data.size() < min_cost) {
                 min_cost = cost / data.size();
                 best_shift = shift;
+                best_bias = bias_v;
             }
         }
         std::cout << "Sync: " << best_shift << std::endl;
@@ -85,24 +103,15 @@ class GyroRoughCorrelator : public BaseComponent {
             pair_storage_->Get(frame, desc);
             auto gyro_rot = gyro_loader_->GetRotation(desc.timestamp_a + best_shift,
                                                       desc.timestamp_b + best_shift);
-            double x, y, z;
+            auto rve = Bias(gyro_rot, best_bias).ToRotationVector();
             cv::Mat_<double> rv(3, 1, CV_64F);
-            gyro_rot.ToRotVec(x, y, z);
-            rv << x, y, z;
+            rv << rve.x(), rve.y(), rve.z();
             cv::Rodrigues(rv, desc.R);
             // desc.t << 0,0,0;
             pair_storage_->Update(frame, desc);
         }
 
         std::cout << "Rotations updated" << std::endl;
-    }
-
-   private:
-    double GetRotMagnitude(const Quaternion& q) {
-        double x, y, z;
-        q.ToRotVec(x, y, z);
-        double norm = sqrt(x * x + y * y + z * z);
-        return norm;
     }
 
    private:
@@ -117,7 +126,8 @@ int main() {
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
-    RegisterCalibrationProvider(ctx, kCalibrationProviderName, "hawkeye_firefly_x_lite_4k_43_v2.json");
+    RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+                                "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
     RegisterVisualizer(ctx, kVisualizerName);
     RegisterNormalFitter(ctx, kNormalFitterName);

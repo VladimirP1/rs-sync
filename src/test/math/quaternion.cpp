@@ -3,44 +3,47 @@
 
 #include <numeric>
 
-#include <math/simple_math.hpp>
+#include <math/quaternion.hpp>
+
+SCENARIO("Bias smoke test") {
+    auto q0 = Quaternion<ceres::Jet<double, 3>>::FromRotationVector({{0, 0}, {0, 1}, {0, 2}});
+    auto q1 = Quaternion<ceres::Jet<double, 3>>::FromRotationVector(
+        {Jet<double, 3>{.01}, Jet<double, 3>{0}, Jet<double, 3>{0}});
+
+    auto b = GetBiasForOffset(q1 * q0);
+
+    REQUIRE(Bias(q1 * q0, b).ToRotationVector().norm() < .0001);
+}
 
 SCENARIO("Approximation of sum with bias") {
-    using GQ = GenericQuaternion<ceres::Jet<double, 3>>;
-    using GQG = GenericQuaternionGroup<ceres::Jet<double, 3>>;
-    using Q = Quaternion;
-    using QG = QuaternionGroup;
+    using GQ = Quaternion<Jet<double, 3>>;
+    using GQG = QuaternionGroup<GQ>;
+    using Q = Quaternion<double>;
+    using QG = QuaternionGroup<Q>;
 
     const size_t size = 33;
-    const double bx{5e-3}, by{1e-3}, bz{-4e-3};
-    const double rx{1e-1}, ry{-2e-2}, rz{1e-3};
+    const Matrix<double, 3, 1> b{5e-3, 1e-3, -4e-3};
+    const Matrix<double, 3, 1> r{1e-1, -2e-2, 1e-3};
 
     GQG g_g;
-    std::vector<GQ> g_quat(size, GQ{{rx, 0}, {ry, 1}, {rz, 2}});
+    std::vector<GQ> g_quat(size, GQ::FromRotationVector({{r.x(), 0}, {r.y(), 1}, {r.z(), 2}}));
     auto g_integrated = g_g.unit();
     for (auto& q : g_quat) {
         g_integrated = g_g.add(q, g_integrated);
     }
 
     QG g;
-    std::vector<Q> quat(size, Q{rx + bx, ry + by, rz + bz});
+    std::vector<Q> quat(size, Q::FromRotationVector(r + b));
     auto integrated = g.unit();
     for (auto& q : quat) {
         integrated = g.add(q, integrated);
     }
 
-    double g_x, g_y, g_z;
-    double x, y, z;
+    auto gv = Bias(g_integrated, b).ToRotationVector();
+    auto v = integrated.ToRotationVector();
 
-    g_integrated.Bias(bx, by, bz).ToRotVec(g_x, g_y, g_z);
-    integrated.ToRotVec(x, y, z);
-
-    auto norm = sqrt(bx * bx + by * by + bz * bz);
-    REQUIRE(g_x == (Approx(x).margin(fabs(size * norm / 20))));
-    REQUIRE(g_y == (Approx(y).margin(fabs(size * norm / 20))));
-    REQUIRE(g_z == (Approx(z).margin(fabs(size * norm / 20))));
-
-    // std::cout << g_x << " " << g_y << " " << g_z << std::endl;
-    // std::cout << x << " " << y << " " << z << std::endl;
-    // std::cout << size * bx << " " << size * by << " " << size * bz << std::endl;
+    auto norm = b.norm();
+    REQUIRE(gv.x() == (Approx(v.x()).margin(fabs(size * norm / 20))));
+    REQUIRE(gv.y() == (Approx(v.y()).margin(fabs(size * norm / 20))));
+    REQUIRE(gv.z() == (Approx(v.z()).margin(fabs(size * norm / 20))));
 }

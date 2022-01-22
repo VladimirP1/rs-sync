@@ -7,7 +7,7 @@
 #include <ds/range_interpolated.hpp>
 #include <ds/segment_tree.hpp>
 
-#include <math/simple_math.hpp>
+#include <math/default_group.hpp>
 
 TEMPLATE_TEST_CASE("Interpolated<T> queries with different underlying data structures", "",
                    PrefixSums<DefaultGroup<double>>, SegmentTree<DefaultGroup<double>>) {

@@ -2,6 +2,8 @@
 
 #include <sstream>
 #include <string>
+#include <cmath>
+#include <tuple>
 
 bool ReadGyroCsv(std::istream& s, std::vector<double>& timestamps,
                  std::vector<std::tuple<double, double, double>>& rvs) {
@@ -34,8 +36,6 @@ bool ReadGyroCsv(std::istream& s, std::vector<double>& timestamps,
             idx++;
         }
     }
-
-    std::vector<std::pair<double, Quaternion>> ret;
 
     while (std::getline(s, line)) {
         std::string cell;
