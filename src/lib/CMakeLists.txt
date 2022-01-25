@@ -38,6 +38,7 @@ set( LIBBL_SOURCES
     bl/visualizer.cpp
     bl/normal_fitter.cpp
     bl/gyro_loader.cpp
+    bl/rough_gyro_correlator.cpp
 bl/correlator.cpp
 )
 

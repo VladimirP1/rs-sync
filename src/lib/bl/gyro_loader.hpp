@@ -8,6 +8,7 @@ namespace rssync {
 class IGyroLoader : public BaseComponent {
    public:
     using QuatT = Quaternion<ceres::Jet<double, 3>>;
+    virtual void SetOrientation(Quaternion<double> orient) = 0;
     virtual QuatT GetRotation(double from_sec, double to_sec) const = 0;
 };
 

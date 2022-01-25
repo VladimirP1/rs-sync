@@ -41,7 +41,12 @@ class GyroLoaderImpl : public IGyroLoader {
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {}
 
     QuatT GetRotation(double from_sec, double to_sec) const override {
-        return gyro_.SoftQuery(from_sec * smplrate_, to_sec * smplrate_);
+        return orientation_ * gyro_.SoftQuery(from_sec * smplrate_, to_sec * smplrate_);
+    }
+
+    void SetOrientation(Quaternion<double> orient) override {
+        orientation_ = {Jet<double, 3>{orient.w()}, Jet<double, 3>{orient.x()},
+                        Jet<double, 3>{orient.y()}, Jet<double, 3>{orient.z()}};
     }
 
    private:
@@ -49,6 +54,7 @@ class GyroLoaderImpl : public IGyroLoader {
     using GyroDsT = Interpolated<PrefixSums<QuatGroupT>>;
     GyroDsT gyro_;
     double smplrate_{};
+    Quaternion<Jet<double, 3>> orientation_ = Quaternion<Jet<double, 3>>::Identity();
 };
 
 void RegisterGyroLoader(std::shared_ptr<IContext> ctx, std::string name, std::string filename) {

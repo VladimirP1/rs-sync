@@ -13,6 +13,7 @@
 #include <bl/correlator.hpp>
 #include <bl/normal_fitter.hpp>
 #include <bl/gyro_loader.hpp>
+#include <bl/rough_gyro_correlator.hpp>
 
 #include <ds/lru_cache.hpp>
 
@@ -25,98 +26,6 @@
 #include <opencv2/calib3d.hpp>
 
 using namespace rssync;
-
-class GyroRoughCorrelator : public BaseComponent {
-   public:
-    void ContextLoaded(std::weak_ptr<BaseComponent> self) override {
-        pair_storage_ = ctx_.lock()->GetComponent<IPairStorage>(kPairStorageName);
-        gyro_loader_ = ctx_.lock()->GetComponent<IGyroLoader>(kGyroLoaderName);
-    }
-
-    void Run() {
-        std::ofstream out("data.csv");
-        std::vector<int> good_frames;
-        pair_storage_->GetFramesWith(good_frames, false, false, true, false, false);
-        std::sort(good_frames.begin(), good_frames.end());
-
-        QuaternionGroup<Quaternion<Jet<double, 3>>> grp;
-        cv::Mat_<double> rv;
-        PairDescription desc;
-        std::vector<std::tuple<double, double, Quaternion<Jet<double, 3>>, double>> data;
-        for (auto frame : good_frames) {
-            pair_storage_->Get(frame, desc);
-            cv::Rodrigues(desc.R, rv);
-            data.emplace_back(
-                desc.timestamp_a, desc.timestamp_b,
-                Quaternion<Jet<double, 3>>::FromRotationVector(
-                    {Jet<double, 3>{rv(0)}, Jet<double, 3>{rv(1)}, Jet<double, 3>{rv(2)}}),
-                desc.points_a.size());
-            std::cout << desc.timestamp_a << desc.timestamp_b << std::endl;
-        }
-
-        double min_cost = std::numeric_limits<double>::max();
-        double best_shift = 0.;
-        Matrix<double, 3, 1> best_bias;
-        for (double shift = -.5; shift < .5; shift += 1e-4) {
-            double cost = 0;
-            Matrix<double,3,1> bias_v = {0,0,0};
-            for (auto frame_info : data) {
-                auto of_rot = std::get<2>(frame_info);
-                auto gyro_rot = gyro_loader_->GetRotation(std::get<0>(frame_info) + shift,
-                                                          std::get<1>(frame_info) + shift);
-
-                auto error = gyro_rot * of_rot.inverse();
-                bias_v += GetBiasForOffset(error);
-            }
-
-            bias_v /= data.size();
-
-            for (auto frame_info : data) {
-                double x, y, z;
-                auto of_rot = std::get<2>(frame_info);
-                auto gyro_rot = gyro_loader_->GetRotation(std::get<0>(frame_info) + shift,
-                                                          std::get<1>(frame_info) + shift);
-
-                // auto ov = of_rot.ToRotationVector();
-                // out << ov.x().a << "," << ov.y().a << "," << ov.z().a << ",";
-                // auto gv = Bias(gyro_rot, bias_v).ToRotationVector();
-                // out << gv.x() << "," << gv.y() << "," << gv.z() << ",";
-
-                auto residual =
-                    (Bias(gyro_rot, bias_v) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
-                cost += log(1. + residual * 100.);
-                // out << std::get<3>(frame_info) << "\n";
-            }
-            out << shift << "," << cost / data.size() << "\n" << std::endl;
-            // break;
-            // std::cout << cost/data.size() << " " << shift << std::endl;
-            if (cost / data.size() < min_cost) {
-                min_cost = cost / data.size();
-                best_shift = shift;
-                best_bias = bias_v;
-            }
-        }
-        std::cout << "Sync: " << best_shift << std::endl;
-
-        for (auto frame : good_frames) {
-            pair_storage_->Get(frame, desc);
-            auto gyro_rot = gyro_loader_->GetRotation(desc.timestamp_a + best_shift,
-                                                      desc.timestamp_b + best_shift);
-            auto rve = Bias(gyro_rot, best_bias).ToRotationVector();
-            cv::Mat_<double> rv(3, 1, CV_64F);
-            rv << rve.x(), rve.y(), rve.z();
-            cv::Rodrigues(rv, desc.R);
-            // desc.t << 0,0,0;
-            pair_storage_->Update(frame, desc);
-        }
-
-        std::cout << "Rotations updated" << std::endl;
-    }
-
-   private:
-    std::shared_ptr<IPairStorage> pair_storage_;
-    std::shared_ptr<IGyroLoader> gyro_loader_;
-};
 
 int main() {
     auto ctx = IContext::CreateContext();
@@ -131,14 +40,17 @@ int main() {
     RegisterVisualizer(ctx, kVisualizerName);
     RegisterNormalFitter(ctx, kNormalFitterName);
     RegisterCorrelator(ctx, kCorrelatorName);
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed_nodc.CSV");
-    RegisterComponent<GyroRoughCorrelator>(ctx, "GyroRoughCorrelator");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
 
     ctx->ContextLoaded();
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
-    int pos = 38;
+    // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
+    //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
+
+    int pos = 120;
     for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
@@ -158,28 +70,31 @@ int main() {
         desc.enable_debug = true;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
-        ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
+        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
 
         // ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
 
-        cv::Mat vis;
-        if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
-            cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
-        }
+        // cv::Mat vis;
+        // if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
+        //     cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
+        // }
 
-        cv::Mat img;
-        ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i + 1, img);
-        img = img.clone();
-        ctx->GetComponent<IVisualizer>(kVisualizerName)->DimImage(img, .4);
-        ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatched(img, i, false);
-        ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, i);
-        cv::imwrite("out" + std::to_string(i) + ".jpg", img);
+        // cv::Mat img;
+        // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i + 1, img);
+        // img = img.clone();
+        // ctx->GetComponent<IVisualizer>(kVisualizerName)->DimImage(img, .4);
+        // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatched(img, i, false);
+        // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, i);
+        // cv::imwrite("out" + std::to_string(i) + ".jpg", img);
     }
-    ctx->GetComponent<GyroRoughCorrelator>("GyroRoughCorrelator")->Run();
+    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+        ->Run(.5, 1e-4, -100000, 100000);
+
+    return 0;
 
     for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
         ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
-
+        std::cout << i << std::endl;
         cv::Mat vis;
         if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
             cv::imwrite("out" + std::to_string(i) + "a.jpg", vis);
