@@ -114,17 +114,12 @@ class CorrelatorImpl : public ICorrelator {
             cv::Mat correlation_map;
             cv::matchTemplate(patch_a, patch_b, correlation_map, cv::TM_CCOEFF_NORMED);
 
-            // Correlation map minus its minimum
-            cv::Mat shifted_corr_map = correlation_map.clone();
-            double corr_min;
-            cv::Point corr_max_loc;
-            cv::minMaxLoc(shifted_corr_map, &corr_min, nullptr, nullptr, &corr_max_loc);
-            shifted_corr_map -= static_cast<float>(corr_min);
-
             // Fit 2d normal distribution to corr map
-            NormalModel model = normal_fitter_->Fit(shifted_corr_map, corr_min);
+            NormalModel model = normal_fitter_->Fit(correlation_map);
 
             // Check if model center is near maximum
+            cv::Point corr_max_loc;
+            cv::minMaxLoc(correlation_map, nullptr, nullptr, nullptr, &corr_max_loc);
             double cx, cy;
             model.GetCenter(cx, cy);
             if (pow(corr_max_loc.x - cx, 2) + pow(corr_max_loc.y - cy, 2) > 3) {

@@ -34,12 +34,12 @@ class NormalModel {
    private:
     double cx_, cy_;
     double sx_, sy_;
-    double a_, alpha_, offset_;
+    double a_, alpha_, offset_{};
 };
 
 class INormalFitter : public rssync::BaseComponent {
    public:
-    virtual NormalModel Fit(const cv::Mat& img, double offset) = 0;
+    virtual NormalModel Fit(const cv::Mat& img) = 0;
 };
 
 void RegisterNormalFitter(std::shared_ptr<IContext> ctx, std::string name);

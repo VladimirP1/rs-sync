@@ -198,7 +198,7 @@ class VisualizerImpl : public IVisualizer {
         // ucorr = cv::abs(ucorr);
         double min, max;
         cv::minMaxLoc(ucorr, &min, &max);
-        ucorr -= min;
+        // ucorr -= min;
         // ucorr /= (max - min);
         ucorr.convertTo(ucorr, CV_8UC1, 255);
         cv::cvtColor(ucorr, ucorr, cv::COLOR_GRAY2BGR);

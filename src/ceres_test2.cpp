@@ -1,9 +1,142 @@
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
+#include <glog/logging.h>
+using ceres::AutoDiffCostFunction;
+using ceres::CostFunction;
+using ceres::Problem;
+using ceres::Solve;
+using ceres::Solver;
+
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <vector>
 #include <iostream>
+
+void SubpixelMax(const cv::Mat& data_f, double& cx, double& cy);
+
+struct Normal2dResidual {
+    template <typename T>
+    bool operator()(const T* ampl, const T* sigma, const T* alpha,
+                    T* residual) const {
+        T xr = (x_ - cx_) * cos(*alpha) - (y_ - cy_) * sin(*alpha);
+        T yr = (x_ - cx_) * sin(*alpha) + (y_ - cy_) * cos(*alpha);
+        T xr2 = xr * xr, yr2 = yr * yr;
+
+        residual[0] = ampl[0] * exp(-xr2 / sigma[0]) * exp(-yr2 / sigma[1]);
+        residual[0] -= z_;
+
+        //T d = xr2 / sigma[0] + yr2 / sigma[1];
+        //residual[0] *= 1. - 1. / (1. + exp(-d));
+
+        return true;
+    }
+
+    void SetXYZ(double cx, double cy, double x, double y, double z) {
+        x_ = x;
+        y_ = y;
+        z_ = z;
+        cx_ = cx;
+        cy_ = cy;
+    }
+
+   private:
+    double cx_{}, cy_{};
+    double x_{}, y_{}, z_{};
+};
+
+
+class NormalModel {
+   public:
+    NormalModel(double a, double cx, double cy, double sx, double sy, double alpha)
+        : a_{a}, cx_{cx}, cy_{cy}, sx_{sx}, sy_{sy}, alpha_{alpha} {}
+
+    double Evaluate(double x, double y) const {
+        double xr = (x - cx_) * cos(alpha_) - (y - cy_) * sin(alpha_);
+        double yr = (x - cy_) * sin(alpha_) + (y - cy_) * cos(alpha_);
+        double xr2 = xr * xr, yr2 = yr * yr;
+        double d = xr2 + yr2;
+
+        return a_ * exp(-xr2 / sx_) * exp(-yr2 / sy_);
+    }
+
+    void GetCenter(double& cx, double& cy) const {
+        cx = cx_;
+        cy = cy_;
+    }
+ private:
+    const double cx_, cy_;
+    const double sx_, sy_;
+    const double a_, alpha_;
+};
+
+class NormalFitter {
+   public:
+    NormalModel Fit(const cv::Mat& img) {
+        FillProblem(img);
+        Solver::Summary summary;
+        Solve(options_, &problem_, &summary);
+        std::cout << sigma_[0] << " " << sigma_[1] << std::endl;
+        return {A_, center_[0], center_[1], sigma_[0], sigma_[1], alpha_};
+    }
+
+   private:
+    void ConstructProblem(int width, int height) {
+        if (width == cur_width_ && height == cur_height_) {
+            return;
+        }
+        problem_ = {};
+        residuals_.clear();
+        for (int j = 0; j < height; ++j) {
+            for (int i = 0; i < width; ++i) {
+                residuals_.push_back(new Normal2dResidual());
+                CostFunction* cost_function =
+                    new AutoDiffCostFunction<Normal2dResidual, 1, 1, 2, 1>(residuals_.back());
+                problem_.AddResidualBlock(cost_function, nullptr, &A_, sigma_, &alpha_);
+            }
+        }
+        cur_width_ = width;
+        cur_height_ = height;
+
+        //problem_.SetParameterLowerBound(&alpha_, 0, 0.);
+        //problem_.SetParameterUpperBound(&alpha_, 0, 4. * M_PI);
+
+        options_.max_num_iterations = 18;
+        options_.linear_solver_type = ceres::DENSE_QR;
+        options_.use_inner_iterations = false;
+        // options_.logging_type = ceres::SILENT;
+        options_.minimizer_progress_to_stdout = true;
+    }
+
+    void FillProblem(const cv::Mat& img) {
+        double cx, cy;
+        SubpixelMax(img, cx, cy);
+        A_ = 1.;
+        alpha_ = 0.;
+        sigma_[0] = 1.;
+        sigma_[1] = 2.;
+        center_[0] = cx;
+        center_[1] = cy;
+
+        ConstructProblem(img.cols, img.rows);
+        for (int j = 0; j < cur_height_; ++j) {
+            for (int i = 0; i < cur_width_; ++i) {
+                double z = img.at<uchar>(j, i) / 255.;
+                residuals_[i + j * cur_width_]->SetXYZ(cx, cy, i, j, z);
+            }
+        }
+    }
+
+   private:
+    Problem problem_;
+    Solver::Options options_;
+    double A_, alpha_;
+    double center_[2];
+    double sigma_[2];
+    std::vector<Normal2dResidual*> residuals_;
+    int cur_width_{-1}, cur_height_{-1};
+};
 
 struct GaussianKernel {
     GaussianKernel(double x, double y, double sigma)
@@ -107,22 +240,37 @@ void SubpixelMax(const cv::Mat& data_f, double& cx, double& cy) {
 int main(int argc, char** argv) {
     cv::Mat data = cv::imread(argv[1]);
     cv::cvtColor(data, data, cv::COLOR_BGR2GRAY);
+    auto data2 = data.clone();
     cv::Mat data_f;
     data.convertTo(data_f, CV_64F);
-    data_f /= cv::sum(data_f)[0];
+    // data_f /= cv::sum(data_f)[0];
 
-    double cx, cy;
-
-    for(int i = 0; i < 100000; ++i) {
+    double cx,cy;
+    // for(int i = 0; i < 100000; ++i) {
     SubpixelMax(data_f, cx, cy);
+    // }
+
+    NormalFitter fitter;
+
+    auto model = fitter.Fit(data);
+
+    for (int j = 0; j < data.rows; ++j) {
+        for (int i = 0; i < data.cols; ++i) {
+            data.at<uchar>(j, i) = 255 * model.Evaluate(i, j);
+        }
     }
 
     std::cout << cx << " " << cy << std::endl;
 
     cv::resize(data, data, data.size() * 10, cv::INTER_CUBIC);
-    cv::circle(data, cv::Point((cx + .5) * 10, (cy + .5) * 10), 1, 0, -1, cv::LINE_AA);
+    cv::circle(data, cv::Point(cx*10+5, cy*10+5),1,0,-1);
     cv::cvtColor(data, data, cv::COLOR_GRAY2BGR);
-    cv::imwrite("b.jpg", data);
+    cv::imwrite("ba.jpg", data);
+
+    cv::resize(data2, data2, data2.size() * 10, cv::INTER_CUBIC);
+    cv::circle(data2, cv::Point(cx*10+5, cy*10+5),1,0,-1);
+    cv::cvtColor(data2, data2, cv::COLOR_GRAY2BGR);
+    cv::imwrite("bb.jpg", data2);
 
     return 0;
 }

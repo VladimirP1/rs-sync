@@ -67,17 +67,17 @@ int main() {
         // desc.t.at<double>(2) << std::endl;
         PairDescription desc;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        desc.enable_debug = true;
+        desc.enable_debug = false;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
-        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
+        ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
 
         // ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
 
-        // cv::Mat vis;
-        // if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
-        //     cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
-        // }
+        cv::Mat vis;
+        if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
+            cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
+        }
 
         // cv::Mat img;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i + 1, img);
@@ -87,9 +87,9 @@ int main() {
         // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, i);
         // cv::imwrite("out" + std::to_string(i) + ".jpg", img);
     }
-    ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(38*30+5);
-    ctx->GetComponent<IVisualizer>(kVisualizerName)
-        ->DumpDebugCorrelations(38 * 30 + 5, "corrs/out");
+    // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(38*30+5);
+    // ctx->GetComponent<IVisualizer>(kVisualizerName)
+    //     ->DumpDebugCorrelations(38 * 30 + 5, "corrs/out");
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(.5, 1e-4, -100000, 100000);
