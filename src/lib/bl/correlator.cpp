@@ -225,7 +225,7 @@ class CorrelatorImpl : public ICorrelator {
         T_roi = adjustment * T_roi;
 
         // Remap
-        cv::warpPerspective(frame(roi), patch, T_roi, dst_size, cv::INTER_CUBIC,
+        cv::warpPerspective(frame(roi), patch, T_roi, dst_size, cv::INTER_LINEAR,
                             cv::BORDER_CONSTANT, cv::Scalar(0, 255, 0));
 
         // Remember mapping for future correlation lookups

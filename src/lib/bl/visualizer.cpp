@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include "pair_storage.hpp"
 
@@ -51,6 +52,23 @@ class VisualizerImpl : public IVisualizer {
         for (int i = 0; i < ids.size(); ++i) {
             cv::line(frame, pts_a[i], pts_b[i], GetColor(ids[i]), 2);
         }
+    }
+
+    bool DumpDebugCorrelations(int frame_number, std::string filename_prefix) override {
+        PairDescription desc;
+        if (!pair_storage_->Get(frame_number, desc) || !desc.has_correlations) {
+            return false;
+        }
+        for (int i = 0; i < desc.debug_correlations.size(); ++i) {
+            if (desc.mask_correlation[i]) {
+                cv::Mat img;
+                desc.debug_correlations[i].convertTo(img, CV_8UC1, 255);
+                cv::imwrite(filename_prefix + std::to_string(frame_number) + "_" +
+                                std::to_string(i) + ".jpg",
+                            img);
+            }
+        }
+        return true;
     }
 
     bool VisualizeCorrelations(cv::Mat& out, int frame_number, double target_aspect) override {
@@ -118,7 +136,7 @@ class VisualizerImpl : public IVisualizer {
 
                 cv::Mat grad_col, tmp;
                 double tx, ty;
-                
+
                 NormalModel model = desc.correlation_models[k];
                 model.ShiftOrigin(desc.corr_valid_radius, desc.corr_valid_radius);
                 model.GetCenter(tx, ty);
@@ -142,8 +160,7 @@ class VisualizerImpl : public IVisualizer {
                 }
 
                 ComputeNormalImage(
-                    tmp, model,
-                    cv::Size(desc.corr_valid_radius * 2, desc.corr_valid_radius * 2));
+                    tmp, model, cv::Size(desc.corr_valid_radius * 2, desc.corr_valid_radius * 2));
                 CorrelationToColor(tmp, grad_col, cv::COLORMAP_MAGMA);
                 cv::circle(grad_col, cv::Point((tx + .5) * 6, (ty + .5) * 6), 1,
                            cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
@@ -174,20 +191,6 @@ class VisualizerImpl : public IVisualizer {
                 out.at<float>(i, j) = model.Evaluate(j, i);
             }
         }
-    }
-
-    void CorrelationGradToColor(const cv::Mat& correlation, cv::Mat& colorized) {
-        colorized = cv::Mat::zeros(correlation.rows, correlation.cols, CV_8UC3);
-        for (int i = 0; i < correlation.rows; ++i) {
-            for (int j = 0; j < correlation.cols; ++j) {
-                auto grad = correlation.at<cv::Vec2f>(i, j);
-                auto angle = atan2(grad[1], grad[0]);
-                uchar hue = angle * 255. / M_PI;
-                colorized.at<cv::Vec3b>(i, j) = {hue, 255, 127};
-                // std::cout <<(int) hue << std::endl;
-            }
-        }
-        cv::cvtColor(colorized, colorized, cv::COLOR_HSV2BGR);
     }
 
     void CorrelationToColor(const cv::Mat& correlation, cv::Mat& colorized, cv::ColormapTypes t) {

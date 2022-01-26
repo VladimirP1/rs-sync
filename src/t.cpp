@@ -50,7 +50,7 @@ int main() {
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
     //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
-    int pos = 120;
+    int pos = 38;
     for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
@@ -87,10 +87,12 @@ int main() {
         // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, i);
         // cv::imwrite("out" + std::to_string(i) + ".jpg", img);
     }
+    ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(38*30+5);
+    ctx->GetComponent<IVisualizer>(kVisualizerName)
+        ->DumpDebugCorrelations(38 * 30 + 5, "corrs/out");
+
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(.5, 1e-4, -100000, 100000);
-
-    return 0;
 
     for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
         ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
