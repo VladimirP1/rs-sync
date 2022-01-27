@@ -36,7 +36,7 @@ class RsReprojector : public BaseComponent {
         gyro_loader_ = ctx_.lock()->GetComponent<IGyroLoader>(kGyroLoaderName);
     }
 
-    struct MatchCtx{
+    struct MatchCtx {
         double rv[3];
         double t_scale;
         double xyz[3], w;
@@ -82,7 +82,6 @@ class RsReprojector : public BaseComponent {
             cv::Mat_<double> point4d_mat = desc.points4d.col(i);
             auto point4d = Matrix<double, 4, 1>(point4d_mat(0), point4d_mat(1), point4d_mat(2),
                                                 point4d_mat(3));
-
 
             auto rot = Bias(gyro_loader_->GetRotation(pt_a_timestamp + gyro_offset,
                                                       pt_b_timestamp + gyro_offset),
@@ -141,8 +140,8 @@ int main() {
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
     //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
-    int pos = 80;
-    for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
+    int pos = 38;
+    for (int i = 30 * pos; i < 30 * pos + 30 * 84; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -199,8 +198,12 @@ int main() {
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 40, 1e-2, -100000, 100000, &rough_correlation_report);
 
-    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(rough_correlation_report.offset, .5, 1e-4, -100000, 100000, &rough_correlation_report);
+    for (int i = 30 * pos; i < 30 * pos + 30 * 83; i += 10) {
+        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+            ->Run(rough_correlation_report.offset, .5, 1e-4, i, i + 60,
+                  &rough_correlation_report);
+        std::cerr << i/30. << "," << rough_correlation_report.offset << std::endl;
+    }
 
     ctx->GetComponent<RsReprojector>("RsReprojector")->Run(rough_correlation_report);
 
