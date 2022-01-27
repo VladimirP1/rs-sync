@@ -14,9 +14,9 @@ int FisheyeCalibration::Width() const { return width_; }
 
 int FisheyeCalibration::Height() const { return height_; }
 
-cv::Mat FisheyeCalibration::CameraMatrix() const { return cameraMatrix_; }
+cv::Mat_<double> FisheyeCalibration::CameraMatrix() const { return cameraMatrix_; }
 
-cv::Mat FisheyeCalibration::DistortionCoeffs() const { return distCoeffs_; }
+cv::Mat_<double> FisheyeCalibration::DistortionCoeffs() const { return distCoeffs_; }
 
 bool FisheyeCalibration::IsLoaded() const { return isLoaded_; }
 

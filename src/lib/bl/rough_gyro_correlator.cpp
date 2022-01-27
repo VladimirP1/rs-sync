@@ -23,19 +23,21 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
 
         FillOfData(of_data, start_frame, end_frame);
 
+        std::vector<int> inliers, best_inliers;
         double min_cost = std::numeric_limits<double>::max();
         double best_shift = 0.;
         Matrix<double, 3, 1> best_bias;
         for (double shift = initial_offset - search_radius; shift < initial_offset + search_radius;
              shift += search_step) {
+            inliers.clear();
             Matrix<double, 3, 1> bias_v;
-
-            double cost = RobustCostFunction(of_data, shift, bias_v);
+            double cost = RobustCostFunction(of_data, inliers, shift, bias_v);
 
             if (cost < min_cost) {
                 min_cost = cost;
                 best_shift = shift;
                 best_bias = bias_v;
+                best_inliers = inliers;
             }
         }
         std::cout << "Sync: " << best_shift << std::endl;
@@ -43,13 +45,14 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         if (report) {
             report->offset = best_shift;
             report->bias_estimate = best_bias;
+            for (auto i : best_inliers) {
+                report->frames.push_back(std::get<0>(of_data[i]));
+            }
         }
 
         ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
         ExportGyroOfTraces(of_data, best_shift, best_bias, "trace.csv");
         // ReplaceRotations(best_shift, best_bias);
-
-        // Replace rotations
     }
 
    private:
@@ -73,9 +76,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
     }
 
-    double RobustCostFunction(const std::vector<FrameInfoT>& of_data, double shift,
-                              Matrix<double, 3, 1>& bias, int iterations = 20,
-                              double initial_thresh = 1e-5,
+    double RobustCostFunction(const std::vector<FrameInfoT>& of_data, std::vector<int>& inliers,
+                              double shift, Matrix<double, 3, 1>& bias, int iterations = 20,
                               double req_inlier_ratio = 1 / 2.) const {
         std::vector<Matrix<double, 3, 1>> biases;
         for (auto frame_info : of_data) {
@@ -102,7 +104,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             auto nth_it = norms.begin() + req_inlier_ratio * norms.size();
 
             std::nth_element(norms.begin(), nth_it, norms.end());
-            // thresh = std::min(thresh, 2 * *nth_it);
+
             if (2 * *nth_it < thresh) {
                 thresh = 2 * *nth_it;
                 base_inlier = b0;
@@ -110,7 +112,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
 
         // Main part
-        std::vector<int> inliers;
+        inliers.clear();
         double best_cost = 1;
         Matrix<double, 3, 1> best_bias{};
 
@@ -156,10 +158,9 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
 
         for (double shift = initial_offset - search_radius; shift < initial_offset + search_radius;
              shift += search_step) {
-            // auto bias_v = EstimateGyroBias(of_data, inlier_data, shift);
             Matrix<double, 3, 1> bias;
-
-            double cost = RobustCostFunction(of_data, shift, bias);
+            std::vector<int> inliers;
+            double cost = RobustCostFunction(of_data, inliers, shift, bias);
 
             out << shift << "," << cost << std::endl;
         }

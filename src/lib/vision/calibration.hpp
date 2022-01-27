@@ -16,9 +16,9 @@ class FisheyeCalibration {
 
     int Height() const;
 
-    cv::Mat CameraMatrix() const;
+    cv::Mat_<double> CameraMatrix() const;
 
-    cv::Mat DistortionCoeffs() const;
+    cv::Mat_<double> DistortionCoeffs() const;
 
     bool IsLoaded() const;
 

@@ -53,61 +53,85 @@ class RsReprojector : public BaseComponent {
         std::vector<PairCtx> pairs;
     };
 
-    void Run(const RoughCorrelationReport& rough_report) {
+    ProblemCtx BuildProblem(const RoughCorrelationReport& rough_report) {
+        ProblemCtx ctx;
+
         double kRsCooef = .75;
         double gyro_offset = rough_report.offset;
-        PairDescription desc;
-        pair_storage_->Get(38 * 30 + 5, desc);
-        std::cout << desc.has_correlations << desc.has_points << desc.has_points4d << desc.has_pose
-                  << std::endl;
-        if (!desc.has_points || !desc.has_points4d || !desc.has_pose) {
-            return;
-        }
-        double readout_duration = (desc.timestamp_b - desc.timestamp_a) * kRsCooef;
-        double img_height_px = calibration_provider_->GetCalibraiton().Height();
 
-        for (int i = 0; i < desc.point_ids.size(); ++i) {
-            // We will need corr data and 4d pts
-            if (!desc.mask_4d[i]) {
-                continue;
+        auto calibration = calibration_provider_->GetCalibraiton();
+        ctx.focal[0] = calibration.CameraMatrix()(0, 0);         // fx
+        ctx.focal[1] = calibration.CameraMatrix()(1, 1);         // fy
+        ctx.dist_params[0] = calibration.CameraMatrix()(0, 2);   // cx
+        ctx.dist_params[1] = calibration.CameraMatrix()(1, 2);   // cy
+        ctx.dist_params[2] = calibration.DistortionCoeffs()(0);  // k1
+        ctx.dist_params[3] = calibration.DistortionCoeffs()(0);  // k2
+        ctx.dist_params[4] = calibration.DistortionCoeffs()(0);  // k3
+        ctx.dist_params[5] = calibration.DistortionCoeffs()(0);  // k4
+
+        for (const auto& frame : rough_report.frames) {
+            PairCtx pctx;
+
+            PairDescription desc;
+            pair_storage_->Get(frame, desc);
+
+            pctx.t[0] = desc.t(0);
+            pctx.t[1] = desc.t(1);
+            pctx.t[2] = desc.t(2);
+
+            double readout_duration = (desc.timestamp_b - desc.timestamp_a) * kRsCooef;
+            double img_height_px = calibration_provider_->GetCalibraiton().Height();
+
+            for (int i = 0; i < desc.point_ids.size(); ++i) {
+                MatchCtx mctx;
+
+                // We will need 4d point
+                if (!desc.mask_4d[i]) {
+                    continue;
+                }
+
+                double pt_a_timestamp =
+                    desc.timestamp_a + readout_duration * (desc.points_a[i].y / img_height_px);
+                double pt_b_timestamp =
+                    desc.timestamp_b + readout_duration * (desc.points_b[i].y / img_height_px);
+                double translation_scale =
+                    (pt_b_timestamp - pt_a_timestamp) / (desc.timestamp_b - desc.timestamp_a);
+
+                cv::Mat_<double> point4d_mat = desc.points4d.col(i);
+                auto point4d = Matrix<double, 4, 1>(point4d_mat(0), point4d_mat(1), point4d_mat(2),
+                                                    point4d_mat(3));
+
+                auto rot = Bias(gyro_loader_->GetRotation(pt_a_timestamp + gyro_offset,
+                                                          pt_b_timestamp + gyro_offset),
+                                rough_report.bias_estimate)
+                               .ToRotationVector();
+
+                mctx.rv[0] = rot[0];
+                mctx.rv[1] = rot[1];
+                mctx.rv[2] = rot[2];
+
+                mctx.t_scale = translation_scale;
+
+                mctx.xyz[0] = point4d[0];
+                mctx.xyz[1] = point4d[1];
+                mctx.xyz[2] = point4d[2];
+                mctx.w = point4d[3];
+
+                mctx.observed_a[0] = desc.points_a[i].x;
+                mctx.observed_a[1] = desc.points_a[i].y;
+                mctx.observed_b[0] = desc.points_b[i].x;
+                mctx.observed_b[1] = desc.points_b[i].y;
+
+                pctx.matches.push_back(mctx);
+
+                // std::cout << (pt_b_timestamp - pt_a_timestamp) << " " << pt_a_timestamp << " "
+                //           << pt_b_timestamp << std::endl;
             }
 
-            double pt_a_timestamp =
-                desc.timestamp_a + readout_duration * (desc.points_a[i].y / img_height_px);
-            double pt_b_timestamp =
-                desc.timestamp_b + readout_duration * (desc.points_b[i].y / img_height_px);
-            double translation_scale =
-                (pt_b_timestamp - pt_a_timestamp) / (desc.timestamp_b - desc.timestamp_a);
-
-            cv::Mat_<double> point4d_mat = desc.points4d.col(i);
-            auto point4d = Matrix<double, 4, 1>(point4d_mat(0), point4d_mat(1), point4d_mat(2),
-                                                point4d_mat(3));
-
-            auto rot = Bias(gyro_loader_->GetRotation(pt_a_timestamp + gyro_offset,
-                                                      pt_b_timestamp + gyro_offset),
-                            rough_report.bias_estimate);
-            auto trans = desc.t * translation_scale;
-
-            // cv::Mat_<double> tmp(3, 1, CV_64F);
-            // cv::Mat P1 = cv::Mat::eye(4, 4, CV_64F);
-            // cv::Mat P2 = cv::Mat::eye(4, 4, CV_64F);
-
-            // tmp << rot.x(), rot.y(), rot.z();
-            // cv::Rodrigues(tmp, P2(cv::Rect(0, 0, 3, 3)));
-            // P2(cv::Rect(3, 0, 1, 3)) = trans;
-
-            // cv::Mat P1inv, P2inv;
-            // cv::invert(P1, P1inv);
-            // cv::invert(P2, P2inv);
-
-            // std::cout << P2inv << std::endl;
-
-            // std::cout << (pt_b_timestamp - pt_a_timestamp) << " " << pt_a_timestamp << " "
-            //           << pt_b_timestamp << std::endl;
-
-            // std::cout << Bias(rot, rough_report.bias_estimate).ToRotationVector().norm() * 180 /
-            // M_PI << std::endl;
+            ctx.pairs.push_back(pctx);
         }
+
+        return ctx;
     }
 
    private:
@@ -141,7 +165,7 @@ int main() {
     //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
     int pos = 38;
-    for (int i = 30 * pos; i < 30 * pos + 30 * 84; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -198,14 +222,13 @@ int main() {
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 40, 1e-2, -100000, 100000, &rough_correlation_report);
 
-    for (int i = 30 * pos; i < 30 * pos + 30 * 83; i += 10) {
-        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-            ->Run(rough_correlation_report.offset, .5, 1e-4, i, i + 60,
-                  &rough_correlation_report);
-        std::cerr << i/30. << "," << rough_correlation_report.offset << std::endl;
-    }
+    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+        ->Run(rough_correlation_report.offset, .5, 1e-4, -100000, 100000,
+              &rough_correlation_report);
 
-    ctx->GetComponent<RsReprojector>("RsReprojector")->Run(rough_correlation_report);
+    ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
+
+    std::cout << rough_correlation_report.frames.size() << std::endl;
 
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
     //     ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
