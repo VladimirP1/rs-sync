@@ -9,6 +9,7 @@ import matplotlib
 csv = pd.read_csv("out.csv")
 print(csv.values.shape)
 plt.figure()
+# plt.xlim(-.1,.1)
 plt.plot(csv.values[:,0], csv.values[:,1])
 plt.savefig("a.png")
 

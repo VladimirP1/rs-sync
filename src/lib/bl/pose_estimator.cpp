@@ -38,8 +38,20 @@ class PoseEstimatorImpl : public IPoseEstimator {
 
         desc.has_undistorted = true;
 
+        auto points_undistorted_b_scaled = desc.points_undistorted_b;
+#if 0
+        constexpr double rs_cooef = .75;
+        for (int i = 0; i < desc.point_ids.size(); ++i) {
+            auto scale =
+                (1 + rs_cooef * (desc.points_b[i].y - desc.points_a[i].y) / calibration.Height());
+            points_undistorted_b_scaled[i] =
+                (points_undistorted_b_scaled[i] - desc.points_undistorted_a[i]) * scale +
+                desc.points_undistorted_a[i];
+        }
+#endif
+
         auto E =
-            cv::findEssentialMat(desc.points_undistorted_a, desc.points_undistorted_b, 1.,
+            cv::findEssentialMat(desc.points_undistorted_a, points_undistorted_b_scaled, 1.,
                                  cv::Point2d(0, 0), cv::RANSAC, .99, 5e-4, desc.mask_essential);
 
         if (E.rows != 3 || E.cols != 3) {
@@ -49,14 +61,14 @@ class PoseEstimatorImpl : public IPoseEstimator {
 
         desc.mask_4d = desc.mask_essential;
 
-        cv::recoverPose(E, desc.points_undistorted_a, desc.points_undistorted_b,
+        cv::recoverPose(E, desc.points_undistorted_a, points_undistorted_b_scaled,
                         cv::Mat::eye(3, 3, CV_64F), desc.R, desc.t, 100000, desc.mask_4d,
                         desc.points4d);
 
         // It is more convinient if all points have positive Z
         for (int i = 0; i < desc.points4d.cols; ++i) {
             if (desc.points4d(2, i) < 0) {
-                desc.points4d.col(i) = - desc.points4d.col(i);
+                desc.points4d.col(i) = -desc.points4d.col(i);
             }
         }
 

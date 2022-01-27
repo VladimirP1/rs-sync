@@ -71,7 +71,7 @@ class NormalFitter {
         problem_.SetParameterLowerBound(sigma_, 1, 1e-3);
         // problem_.SetParameterUpperBound(&alpha_, 0, 4. * M_PI);
 
-        options_.max_num_iterations = 10;
+        options_.max_num_iterations = 12;
         options_.linear_solver_type = ceres::DENSE_QR;
         options_.use_inner_iterations = false;
         options_.function_tolerance = 1e-4;
