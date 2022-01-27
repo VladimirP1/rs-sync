@@ -74,7 +74,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
     }
 
     double RobustCostFunction(const std::vector<FrameInfoT>& of_data, double shift,
-                              Matrix<double, 3, 1>& bias, int iterations = 10,
+                              Matrix<double, 3, 1>& bias, int iterations = 20,
                               double initial_thresh = 1e-5,
                               double req_inlier_ratio = 1 / 2.) const {
         std::vector<Matrix<double, 3, 1>> biases;
@@ -88,73 +88,62 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             biases.push_back(bias);
         }
 
-        Matrix<double, 3, 1> bias_v{};
-        int inliers = 0;
-        double thresh = initial_thresh;
-        // Estimate the RANSAC threshold
-        while (true) {
-            for (int i = 0; i < iterations; ++i) {
-                auto b0 = biases[static_cast<size_t>(rand()) % biases.size()];
-                inliers = 0;
-                for (const auto& b1 : biases) {
-                    auto diff = (b1 - b0).norm();
-                    if (diff < thresh) {
-                        ++inliers;
-                    }
-                }
-                if (inliers >= biases.size() * req_inlier_ratio) {
-                    break;
-                }
-            }
-            if (inliers >= biases.size() * req_inlier_ratio) {
-                break;
-            }
-            thresh *= 2;
-        }
-
-        double best_cost = 1;
-        Matrix<double, 3, 1> best_bias{};
-        std::vector<int> inliers_idx;
-        // Main RANSAC
+        Matrix<double, 3, 1> base_inlier{};
+        double thresh = std::numeric_limits<double>::max();
+        std::vector<double> norms;
+        // Estimate the inlier threshold
         for (int i = 0; i < iterations; ++i) {
             auto b0 = biases[static_cast<size_t>(rand()) % biases.size()];
-            bias_v = {0, 0, 0};
-            inliers = 0;
-            inliers_idx.clear();
-            for (int ib1 = 0; ib1 < biases.size(); ++ib1) {
-                const auto& b1 = biases[ib1];
-                if ((b1 - b0).norm() < thresh) {
-                    ++inliers;
-                    bias_v += b1;
-                    inliers_idx.push_back(ib1);
-                }
-            }
-            bias_v /= inliers;
 
-            if (inliers < biases.size() * req_inlier_ratio) {
-                continue;
+            norms.clear();
+            for (auto& b1 : biases) {
+                norms.push_back((b0 - b1).norm());
             }
+            auto nth_it = norms.begin() + req_inlier_ratio * norms.size();
 
-            // Calculate cost
-            double cost = 0;
-            double count = 0;
-            for (auto j : inliers_idx) {
-                const auto& frame_info = of_data[j];
-                auto of_rot = std::get<3>(frame_info);
-                auto gyro_rot = gyro_loader_->GetRotation(std::get<1>(frame_info) + shift,
-                                                          std::get<2>(frame_info) + shift);
-
-                auto residual =
-                    (Bias(gyro_rot, bias_v) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
-                cost += log(1. + residual * 100.);
-                count += 1;
+            std::nth_element(norms.begin(), nth_it, norms.end());
+            // thresh = std::min(thresh, 2 * *nth_it);
+            if (2 * *nth_it < thresh) {
+                thresh = 2 * *nth_it;
+                base_inlier = b0;
             }
-            cost /= count;
+        }
 
-            if (cost < best_cost) {
-                best_cost = cost;
-                best_bias = bias_v;
+        // Main part
+        std::vector<int> inliers;
+        double best_cost = 1;
+        Matrix<double, 3, 1> best_bias{};
+
+        bias = {0, 0, 0};
+        inliers.clear();
+        for (int ib1 = 0; ib1 < biases.size(); ++ib1) {
+            const auto& b1 = biases[ib1];
+            if ((b1 - base_inlier).norm() < thresh) {
+                bias += b1;
+                inliers.push_back(ib1);
             }
+        }
+        bias /= inliers.size();
+
+        // Calculate cost
+        double cost = 0;
+        double count = 0;
+        for (auto j : inliers) {
+            const auto& frame_info = of_data[j];
+            auto of_rot = std::get<3>(frame_info);
+            auto gyro_rot = gyro_loader_->GetRotation(std::get<1>(frame_info) + shift,
+                                                      std::get<2>(frame_info) + shift);
+
+            auto residual =
+                (Bias(gyro_rot, bias) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
+            cost += log(1. + residual * 100.);
+            count += 1;
+        }
+        cost /= count;
+
+        if (cost < best_cost) {
+            best_cost = cost;
+            best_bias = bias;
         }
 
         bias = best_bias;

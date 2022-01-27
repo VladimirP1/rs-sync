@@ -62,7 +62,7 @@ class PoseEstimatorImpl : public IPoseEstimator {
         desc.mask_4d = desc.mask_essential;
 
         cv::recoverPose(E, desc.points_undistorted_a, points_undistorted_b_scaled,
-                        cv::Mat::eye(3, 3, CV_64F), desc.R, desc.t, 100000, desc.mask_4d,
+                        cv::Mat::eye(3, 3, CV_64F), desc.R, desc.t, 1000, desc.mask_4d,
                         desc.points4d);
 
         // It is more convinient if all points have positive Z

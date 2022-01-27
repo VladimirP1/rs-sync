@@ -141,7 +141,7 @@ int main() {
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
     //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
-    int pos = 38;
+    int pos = 80;
     for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
