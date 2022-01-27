@@ -12,7 +12,7 @@ struct RoughCorrelationReport {
 
 class IRoughGyroCorrelator : public rssync::BaseComponent {
    public:
-    virtual void Run(double search_radius, double search_step, int start_frame, int end_frame, RoughCorrelationReport* report = nullptr) = 0;
+    virtual void Run(double initial_offset, double search_radius, double search_step, int start_frame, int end_frame, RoughCorrelationReport* report = nullptr) = 0;
 };
 
 void RegisterRoughGyroCorrelator(std::shared_ptr<IContext> ctx, std::string name);

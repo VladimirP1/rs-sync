@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <tuple>
+#include <cmath>
 
 #include <opencv2/calib3d.hpp>
 
@@ -16,8 +17,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         gyro_loader_ = ctx_.lock()->GetComponent<IGyroLoader>(kGyroLoaderName);
     }
 
-    void Run(double search_radius, double search_step, int start_frame, int end_frame,
-             RoughCorrelationReport* report) override {
+    void Run(double initial_offset, double search_radius, double search_step, int start_frame,
+             int end_frame, RoughCorrelationReport* report) override {
         std::vector<FrameInfoT> of_data;
 
         FillOfData(of_data, start_frame, end_frame);
@@ -25,7 +26,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         double min_cost = std::numeric_limits<double>::max();
         double best_shift = 0.;
         Matrix<double, 3, 1> best_bias;
-        for (double shift = -search_radius; shift < search_radius; shift += search_step) {
+        for (double shift = initial_offset - search_radius; shift < initial_offset + search_radius;
+             shift += search_step) {
             Matrix<double, 3, 1> bias_v;
 
             double cost = RobustCostFunction(of_data, shift, bias_v);
@@ -43,9 +45,9 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             report->bias_estimate = best_bias;
         }
 
-        ExportSyncPlot(of_data, search_radius, search_step, "out.csv");
+        ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
         ExportGyroOfTraces(of_data, best_shift, best_bias, "trace.csv");
-        ReplaceRotations(best_shift, best_bias);
+        // ReplaceRotations(best_shift, best_bias);
 
         // Replace rotations
     }
@@ -89,14 +91,14 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         Matrix<double, 3, 1> bias_v{};
         int inliers = 0;
         double thresh = initial_thresh;
-
         // Estimate the RANSAC threshold
         while (true) {
             for (int i = 0; i < iterations; ++i) {
                 auto b0 = biases[static_cast<size_t>(rand()) % biases.size()];
                 inliers = 0;
                 for (const auto& b1 : biases) {
-                    if ((b1 - b0).norm() < thresh) {
+                    auto diff = (b1 - b0).norm();
+                    if (diff < thresh) {
                         ++inliers;
                     }
                 }
@@ -116,7 +118,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         // Main RANSAC
         for (int i = 0; i < iterations; ++i) {
             auto b0 = biases[static_cast<size_t>(rand()) % biases.size()];
-            bias_v = {0,0,0};
+            bias_v = {0, 0, 0};
             inliers = 0;
             inliers_idx.clear();
             for (int ib1 = 0; ib1 < biases.size(); ++ib1) {
@@ -132,7 +134,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             if (inliers < biases.size() * req_inlier_ratio) {
                 continue;
             }
-            
+
             // Calculate cost
             double cost = 0;
             double count = 0;
@@ -159,11 +161,12 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         return best_cost;
     }
 
-    void ExportSyncPlot(const std::vector<FrameInfoT>& of_data, double search_radius,
-                        double search_step, std::string filename) {
+    void ExportSyncPlot(const std::vector<FrameInfoT>& of_data, double initial_offset,
+                        double search_radius, double search_step, std::string filename) {
         std::ofstream out{filename};
 
-        for (double shift = -search_radius; shift < search_radius; shift += search_step) {
+        for (double shift = initial_offset - search_radius; shift < initial_offset + search_radius;
+             shift += search_step) {
             // auto bias_v = EstimateGyroBias(of_data, inlier_data, shift);
             Matrix<double, 3, 1> bias;
 

@@ -197,7 +197,10 @@ int main() {
     RoughCorrelationReport rough_correlation_report;
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(.5, 1e-4, -100000, 100000, &rough_correlation_report);
+        ->Run(0, 40, 1e-2, -100000, 100000, &rough_correlation_report);
+
+    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+        ->Run(rough_correlation_report.offset, .5, 1e-4, -100000, 100000, &rough_correlation_report);
 
     ctx->GetComponent<RsReprojector>("RsReprojector")->Run(rough_correlation_report);
 

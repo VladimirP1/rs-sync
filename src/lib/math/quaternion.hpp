@@ -57,6 +57,9 @@ inline Eigen::Matrix<double, 3, 1> GetBiasForOffset(const Quaternion<Jet<double,
         e.y().v[0], e.y().v[1], e.y().v[2], 
         e.z().v[0], e.z().v[1], e.z().v[2];
     // clang-format on
-    return jac.inverse() * (-ea);
+    
+    return jac.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(-ea);
+    // return jac.colPivHouseholderQr().solve(-ea);
+    // return jac.inverse() * (-ea);
     
 }
