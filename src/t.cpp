@@ -1,3 +1,5 @@
+#define MAX_LOG_LEVEL -100
+
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -75,6 +77,7 @@ Eigen::Vector3d GetGyroDerivative(IGyroLoader* loader, double time, double enlar
         double k = krnl((act_start + i * act_step - time) / act_step / enlarge);
         rv += rvs[i] * k;
     }
+    // std::cout << (rv / act_step).norm() * 180 / M_PI << std::endl;
     return rv / act_step;
 }
 
@@ -88,19 +91,29 @@ struct IntegrateGyroFunction : public ceres::SizedCostFunction<3, 2, 3> {
         // Compute value
         auto rot_jet = gyro_loader_->GetRotation(bounds[0], bounds[1]);
         auto rot_val = Bias(rot_jet, bias_vec);
-        Eigen::Vector3d{rotation} = rot_val.ToRotationVector();
+        Eigen::Map<Eigen::Vector3d>{rotation} = rot_val.ToRotationVector();
+
+        // std::cout << Eigen::Vector3d{rotation} << "\npp\n" << rot_val << "\nqq\n" <<
+        // rot_val.ToRotationVector() << "\n------------------------------------------\n";
 
         // Compute jacobians
+        if (!jacobians) {
+            return true;
+        }
+
         // - for first parameter block, size 3x2
-        Eigen::Matrix<double, 3, 2, Eigen::RowMajor> jac1{jacobians[0]};
-        jac1.block(0, 0, 1, 3) =
-            GetGyroDerivative(gyro_loader_, bounds[0], expand_) + bias_vec;
-        jac1.block(1, 0, 1, 3) =
-            GetGyroDerivative(gyro_loader_, bounds[1], expand_) + bias_vec;
+        if (jacobians[0]) {
+            Eigen::Map<Eigen::Matrix<double, 3, 2, Eigen::RowMajor>> jac1{jacobians[0]};
+            jac1.block(0, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[0], expand_) + bias_vec;
+            jac1.block(1, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[1], expand_) + bias_vec;
+            // jac1.fill(0);
+        }
 
         // - for second parameter block, size 3x3
-        Eigen::Matrix<double, 3, 3, Eigen::RowMajor> jac2{jacobians[1]};
-        jac2 = BiasJacobian(rot_jet);
+        if (jacobians[1]) {
+            Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> jac2{jacobians[1]};
+            jac2 = BiasJacobian(rot_jet);
+        }
 
         return true;
     }
@@ -110,7 +123,37 @@ struct IntegrateGyroFunction : public ceres::SizedCostFunction<3, 2, 3> {
     IGyroLoader* gyro_loader_;
 };
 
+struct ProjectPointFunction : public ceres::SizedCostFunction<2, 3, 8> {
+    virtual bool Evaluate(double const* const* params, double* projected,
+                          double** jacobians) const {
+        double const* point = params[0];
+        double const* lens_params = params[1];
 
+        double uv[2], du[11], dv[11];
+        ProjectPointJacobianExtended(point, lens_params, uv, du, dv);
+
+        projected[0] = uv[0];
+        projected[1] = uv[1];
+
+        if (!jacobians) {
+            return true;
+        }
+
+        // for first parameter block, 2x3
+        if (jacobians[0]) {
+            std::copy_n(du, 3, jacobians[0] + 0);
+            std::copy_n(dv, 3, jacobians[0] + 3);
+        }
+
+        // for second parameter block, 2x8
+        if (jacobians[1]) {
+            std::copy_n(du + 3, 8, jacobians[1] + 0);
+            std::copy_n(dv + 3, 8, jacobians[1] + 8);
+        }
+
+        return true;
+    }
+};
 
 class RsReprojector : public BaseComponent {
    public:
@@ -135,110 +178,110 @@ class RsReprojector : public BaseComponent {
     };
 
     struct ProblemCtx {
+        double gyro_delay;
         double rs_coeff;
         Vector3d gyro_bias;
         Matrix<double, 8, 1> lens_params;
         std::vector<PairCtx> pairs;
     };
 
-    /* struct CostFunctor {
-          CostFunctor(ProblemCtx* ctx, PairCtx* pctx, MatchCtx* mctx)
-              : ctx_{ctx}, pctx_{pctx}, mctx_{mctx} {}
+    struct CostFunctor {
+        CostFunctor(ceres::CostFunctionToFunctor<3, 2, 3>* integrate_gyro,
+                    ceres::CostFunctionToFunctor<2, 3, 8>* project_point, ProblemCtx* ctx,
+                    PairCtx* pctx, MatchCtx* mctx)
+            : integrate_gyro_{integrate_gyro},
+              project_point_{project_point},
+              ctx_{ctx},
+              pctx_{pctx},
+              mctx_{mctx} {}
 
-          bool operator()(const double* point, const double* t, double* residuals) const {
-              Eigen::Matrix4d transformation;
-              Eigen::Matrix4d transformation_j;
-              transformation.setIdentity();
+        template <typename T>
+        bool operator()(const T* gyro_delay, const T* bias, const T* point, const T* translation,
+                        T* residuals) const {
+            // Intrgrate gyro
+            Matrix<T, 2, 1> integration_segment;
+            integration_segment << T{mctx_->ts_a} + gyro_delay[0], T{mctx_->ts_b} + gyro_delay[0];
+            // Matrix<T, 3, 1> bias;
+            // bias << T{ctx_->gyro_bias[0]}, T{ctx_->gyro_bias[1]}, T{ctx_->gyro_bias[2]};
+            Matrix<T, 3, 1> rotation;
+            (*integrate_gyro_)(integration_segment.data(), bias, rotation.data());
 
-              // Rotation is constant for now...
-              Eigen::Vector3d r{mctx_->rv[0], mctx_->rv[1], mctx_->rv[2]};
-              transformation.block<3, 3>(0, 0) =
-                  Eigen::AngleAxis<double>(r.norm(), r.normalized()).toRotationMatrix();
-              transformation.block<3, 1>(0, 3) = mctx_->t_scale * Eigen::Vector3d{t[0], t[1], t[2]};
+            // Rotate point
+            Matrix<T, 3, 1> rotated_point;
+            ceres::AngleAxisRotatePoint(rotation.data(), point, rotated_point.data());
 
-              Eigen::Vector4d point4d = Eigen::Vector4d{point[0], point[1], point[2], mctx_->w};
-              Eigen::Vector4d transformed = transformation * point4d;
+            // Translate point
+            rotated_point += Matrix<T, 3, 1>{translation} * mctx_->point[3];// * mctx_->t_scale;
 
-              // std::cout << transformation << std::endl;
-              // std::cout << "R" << r.norm() << transformed.transpose() << " " <<
-      point4d.transpose()
-              // << std::endl; std::cout << "\n--------\n" << transformed.transpose() <<
-              // "\n--------\n" << point4d.transpose() << std::endl;
+            // Cast lens_params to the appropriate type
+            Matrix<T, 8, 1> lens_params{ctx_->lens_params.cast<T>()};
 
-              // Lens parameters
-              double full_lens_params[8];
-              full_lens_params[0] = ctx_->focal[0];
-              full_lens_params[1] = ctx_->focal[1];
-              std::copy_n(ctx_->dist_params, 6, full_lens_params + 2);
+            // Projection for view A
+            Matrix<T, 2, 1> uv_a;
+            (*project_point_)(point, lens_params.data(), uv_a.data());
 
-              // Projection for view A
-              double uv_a[2];
-              double du_a[11], dv_a[11];
-              ProjectPointJacobianExtended(point4d.data(), full_lens_params, uv_a, du_a, dv_a);
+            // Projection for view B
+            Matrix<T, 2, 1> uv_b;
+            (*project_point_)(rotated_point.data(), lens_params.data(), uv_b.data());
 
-              // Projection for view B
-              double uv_b[2];
-              double du_b[11], dv_b[11];
-              ProjectPointJacobianExtended(transformed.data(), full_lens_params, uv_b, du_b, dv_b);
+            // std::cout << uv_b << "\n-------------\n" << std::endl;
+            // Distance to observed
+            Matrix<T, 2, 1> observed_a{mctx_->observed_a.cast<T>()},
+                observed_b{mctx_->observed_b.cast<T>()};
 
-              // Distance to observed
-              double dist_x_a = mctx_->observed_a[0] - uv_a[0];
-              double dist_y_a = mctx_->observed_a[1] - uv_a[1];
+            residuals[0] = (uv_a - observed_a).norm();
+            residuals[1] = (uv_b - observed_b).norm();
 
-              double dist_x_b = mctx_->observed_b[0] - uv_b[0];
-              double dist_y_b = mctx_->observed_b[1] - uv_b[1];
+            return true;
+        }
 
-              // std::cout << "pp: " << full_lens_params[2] << " " << full_lens_params[3] <<
-              // std::endl; std::cout << "\nProjected:\n" << uv_a[0] << " " << uv_a[1] << "\n" <<
-              // uv_b[0] << " " << uv_b[1] << std::endl;// << mctx_->observed_a[0] << " " <<
-              // mctx_->observed_a[1] << " " << dist_x_a << " " << dist_y_a << std::endl; std::cout
-      <<
-              // "\nObserved:\n" << mctx_->observed_a[0] << " " << mctx_->observed_a[1] << "\n" <<
-              // mctx_->observed_b[0] << " " << mctx_->observed_b[1] << std::endl;// <<
-              // mctx_->observed_a[0] << " " << mctx_->observed_a[1] << " " << dist_x_a << " " <<
-              // dist_y_a << std::endl;
+       private:
+        ProblemCtx* ctx_;
+        PairCtx* pctx_;
+        MatchCtx* mctx_;
+        ceres::CostFunctionToFunctor<3, 2, 3>* integrate_gyro_;
+        ceres::CostFunctionToFunctor<2, 3, 8>* project_point_;
+    };
 
-              residuals[0] = dist_x_a * dist_x_a + dist_y_a * dist_y_a;
-              residuals[1] = dist_x_b * dist_x_b + dist_y_b * dist_y_b;
+    double SolveProblem(ProblemCtx &ctx) {
+        ceres::Problem problem;
+        ceres::CostFunctionToFunctor<3, 2, 3> integrate_gyro_functor{
+            new IntegrateGyroFunction(gyro_loader_.get())};
+        ceres::CostFunctionToFunctor<2, 3, 8> project_point_functor{new ProjectPointFunction()};
+        for (auto& pctx : ctx.pairs) {
+            for (auto& mctx : pctx.matches) {
+                ceres::CostFunction* cost_function =
+                    new ceres::AutoDiffCostFunction<CostFunctor, 2, 1, 3, 3, 3>(new CostFunctor(
+                        &integrate_gyro_functor, &project_point_functor, &ctx, &pctx, &mctx));
+                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(0.5), &ctx.gyro_delay,
+                                         ctx.gyro_bias.data(), mctx.point.data(), pctx.tv.data());
+            }
+        }
 
-              // std::cout << residuals[0] << residuals[1] << std::endl;
+        ceres::Solver::Options options;
+        options.max_num_iterations = 1025;
+        options.preconditioner_type = ceres::SCHUR_JACOBI;
+        options.linear_solver_type = ceres::ITERATIVE_SCHUR;
+        options.use_inner_iterations = true;
+        options.use_nonmonotonic_steps = true;
+        options.num_threads = 8;
+        options.minimizer_progress_to_stdout = false;
+        options.logging_type = ceres::SILENT;
+        ceres::Solver::Summary summary;
+        Solve(options, &problem, &summary);
+        std::cout << summary.BriefReport() << "\n";
 
-              return true;
-          }
+        std::cout << "Sync: " << ctx.gyro_delay << std::endl;
 
-         private:
-          ProblemCtx* ctx_;
-          PairCtx* pctx_;
-          MatchCtx* mctx_;
-      };
-
-      void SolveProblem(ProblemCtx ctx) {
-          ceres::Problem problem;
-          for (auto& pctx : ctx.pairs) {
-              for (auto& mctx : pctx.matches) {
-                  ceres::CostFunction* cost_function =
-                      new ceres::NumericDiffCostFunction<CostFunctor, ceres::RIDDERS, 2, 3, 3>(
-                          new CostFunctor(&ctx, &pctx, &mctx));
-                  problem.AddResidualBlock(cost_function, nullptr, mctx.xyz, pctx.t);
-              }
-          }
-
-          ceres::Solver::Options options;
-          options.max_num_iterations = 250;
-          options.linear_solver_type = ceres::ITERATIVE_SCHUR;
-          options.minimizer_progress_to_stdout = true;
-          ceres::Solver::Summary summary;
-          Solve(options, &problem, &summary);
-          std::cout << summary.BriefReport() << "\n";
-
-          for (int i = 0; i < 6; ++i) {
-              std::cout << ctx.dist_params[i] << std::endl;
-          }
-          std::cout << std::endl;
-          for (auto& f : ctx.pairs) {
-              std::cout << Eigen::Vector3d{f.t[0], f.t[1], f.t[2]}.norm() << std::endl;
-          }
-      }*/
+        // for (int i = 0; i < 6; ++i) {
+        //     std::cout << ctx.dist_params[i] << std::endl;
+        // }
+        // std::cout << std::endl;
+        // for (auto& f : ctx.pairs) {
+        //     std::cout << Eigen::Vector3d{f.t[0], f.t[1], f.t[2]}.norm() << std::endl;
+        // }
+        return summary.final_cost;
+    }
 
     ProblemCtx BuildProblem(const RoughCorrelationReport& rough_report) {
         ProblemCtx ctx;
@@ -252,6 +295,7 @@ class RsReprojector : public BaseComponent {
             calibration.DistortionCoeffs()(2), calibration.DistortionCoeffs()(3);
         ctx.rs_coeff = .75;
         ctx.gyro_bias = rough_report.bias_estimate;
+        ctx.gyro_delay = rough_report.offset;
 
         for (const auto& frame : rough_report.frames) {
             PairCtx pctx;
@@ -267,7 +311,7 @@ class RsReprojector : public BaseComponent {
             for (int i = 0; i < desc.point_ids.size(); ++i) {
                 MatchCtx mctx;
 
-                if (((size_t)random()) % 100 > 10) {
+                if (((size_t)random()) % 100 > 5) {
                     continue;
                 }
 
@@ -305,6 +349,7 @@ class RsReprojector : public BaseComponent {
             }
 
             ctx.pairs.push_back(pctx);
+            // break;
         }
 
         return ctx;
@@ -316,7 +361,8 @@ class RsReprojector : public BaseComponent {
     std::shared_ptr<IGyroLoader> gyro_loader_;
 };
 
-int main() {
+int main(int args, char** argv) {
+    google::InitGoogleLogging(argv[0]);
     auto ctx = IContext::CreateContext();
 
     RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
@@ -403,9 +449,15 @@ int main() {
               &rough_correlation_report);
     std::cout << rough_correlation_report.frames.size() << std::endl;
 
+    std::ofstream out("log.csv");
+    double r_ofs = rough_correlation_report.offset;
     auto problem_ctx =
         ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
-    // ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx);
+    for (double ofs = r_ofs - .02; ofs < r_ofs + .02; ofs += .0005) {
+        problem_ctx.gyro_delay = ofs;
+        double cost = ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx);
+        out << ofs << "," << cost << "," << problem_ctx.gyro_delay << std::endl;
+    }
 
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
     //     ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
@@ -415,12 +467,6 @@ int main() {
     //         cv::imwrite("out" + std::to_string(i) + "a.jpg", vis);
     //     }
     // }
-
-    double *a, *b, *c;
-
-    auto cost_functor = ceres::CostFunctionToFunctor<3, 2, 3>(
-        new IntegrateGyroFunction(ctx->GetComponent<IGyroLoader>(kGyroLoaderName).get()));
-    cost_functor(a, b, c);
 
     std::cout << "main done" << std::endl;
 
