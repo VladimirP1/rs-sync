@@ -76,16 +76,16 @@ int main(int argc, char** argv) {
     int count = 0;
 
     {
-    Stopwatch w;
-    for (double ofs = 0; ofs < 1 / 30.; ofs += .00001) {
-        auto rv = GetGyroDerivative(gyro_loader.get(), base + ofs, krnl_enlarge);
-        ++count;
-     //   out << ofs << "," << rv.x() << "," << rv.y() << "," << rv.z() << std::endl;
-        // auto R = gyro_loader->GetRotation(base + ofs, base + duration + ofs);
-        // auto rv = R.ToRotationVector();
-        // out << ofs << "," << rv.x().a << "," << rv.y().a << "," << rv.z().a << std::endl;
-    };
-    std::cout << count << std::endl;
+        Stopwatch w;
+        for (double ofs = 0; ofs < 1 / 30.; ofs += .00001) {
+            auto rv = GetGyroDerivative(gyro_loader.get(), base + ofs, krnl_enlarge);
+            ++count;
+            // out << ofs << "," << rv.x() << "," << rv.y() << "," << rv.z() << std::endl;
+            // auto R = gyro_loader->GetRotation(base + ofs, base + duration + ofs);
+            // auto rv = R.ToRotationVector();
+            // out << ofs << "," << rv.x().a << "," << rv.y().a << "," << rv.z().a << std::endl;
+        };
+        std::cout << count << std::endl;
     }
 
     return 0;
