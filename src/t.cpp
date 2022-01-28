@@ -25,6 +25,11 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/calib3d.hpp>
 
+#include <ceres/ceres.h>
+#include <ceres/rotation.h>
+
+#include <vision/camera_model.hpp>
+
 using namespace rssync;
 
 class RsReprojector : public BaseComponent {
@@ -53,6 +58,98 @@ class RsReprojector : public BaseComponent {
         std::vector<PairCtx> pairs;
     };
 
+    struct CostFunctor {
+        CostFunctor(ProblemCtx* ctx, PairCtx* pctx, MatchCtx* mctx)
+            : ctx_{ctx}, pctx_{pctx}, mctx_{mctx} {}
+
+        bool operator()(const double* point, const double* t, const double* lens_params,
+                        double* residuals) const {
+            Eigen::Matrix4d transformation;
+            Eigen::Matrix4d transformation_j;
+            transformation.setIdentity();
+
+            // Rotation is constant for now...
+            Eigen::Vector3d r{mctx_->rv[0], mctx_->rv[1], mctx_->rv[2]};
+            transformation.block<3, 3>(0, 0) =
+                Eigen::AngleAxis<double>(r.norm(), r.normalized()).toRotationMatrix();
+            transformation.block<3, 1>(0, 3) = Eigen::Vector3d{t[0], t[1], t[2]};
+
+            Eigen::Vector4d point4d = Eigen::Vector4d{point[0], point[1], point[2], mctx_->w};
+            Eigen::Vector4d transformed = transformation * point4d;
+
+            // std::cout << transformation << std::endl;
+            // std::cout << "R" << r.norm() << transformed.transpose() << " " << point4d.transpose() << std::endl;
+            // std::cout << "\n--------\n" << transformed.transpose() << "\n--------\n" << point4d.transpose() << std::endl;
+
+            // Lens parameters
+            double full_lens_params[8];
+            full_lens_params[0] = ctx_->focal[0];
+            full_lens_params[1] = ctx_->focal[1];
+            std::copy_n(lens_params, 6, full_lens_params + 2);
+
+            // Projection for view A
+            double uv_a[2];
+            double du_a[11], dv_a[11];
+            ProjectPointJacobianExtended(point4d.data(), full_lens_params, uv_a, du_a, dv_a);
+
+            // Projection for view B
+            double uv_b[2];
+            double du_b[11], dv_b[11];
+            ProjectPointJacobianExtended(transformed.data(), full_lens_params, uv_b, du_b, dv_b);
+
+            // Distance to observed
+            double dist_x_a = mctx_->observed_a[0] - uv_a[0];
+            double dist_y_a = mctx_->observed_a[1] - uv_a[1];
+
+            double dist_x_b = mctx_->observed_b[0] - uv_b[0];
+            double dist_y_b = mctx_->observed_b[1] - uv_b[1];
+
+            // std::cout << "pp: " << full_lens_params[2] << " " << full_lens_params[3] << std::endl;
+            // std::cout << "\nProjected:\n" << uv_a[0] << " " << uv_a[1] << "\n" << uv_b[0] << " " << uv_b[1] << std::endl;// << mctx_->observed_a[0] << " " << mctx_->observed_a[1] << " " << dist_x_a << " " << dist_y_a << std::endl;
+            // std::cout << "\nObserved:\n" << mctx_->observed_a[0] << " " << mctx_->observed_a[1] << "\n" << mctx_->observed_b[0] << " " << mctx_->observed_b[1] << std::endl;// << mctx_->observed_a[0] << " " << mctx_->observed_a[1] << " " << dist_x_a << " " << dist_y_a << std::endl;
+
+            residuals[0] = dist_x_a * dist_x_a + dist_y_a * dist_y_a;
+            residuals[1] = dist_x_b * dist_x_b + dist_y_b * dist_y_b;
+
+            // std::cout << residuals[0] << residuals[1] << std::endl;
+
+            return true;
+        }
+
+       private:
+        ProblemCtx* ctx_;
+        PairCtx* pctx_;
+        MatchCtx* mctx_;
+    };
+
+    void SolveProblem(ProblemCtx ctx) {
+        ceres::Problem problem;
+        for (auto& pctx : ctx.pairs) {
+            for (auto& mctx : pctx.matches) {
+                ceres::CostFunction* cost_function =
+                    new ceres::NumericDiffCostFunction<CostFunctor, ceres::RIDDERS, 2, 3, 3, 6>(
+                        new CostFunctor(&ctx, &pctx, &mctx));
+                problem.AddResidualBlock(cost_function, nullptr, mctx.xyz, pctx.t, ctx.dist_params);
+            }
+        }
+
+        ceres::Solver::Options options;
+        options.max_num_iterations = 250;
+        options.linear_solver_type = ceres::ITERATIVE_SCHUR;
+        options.minimizer_progress_to_stdout = true;
+        ceres::Solver::Summary summary;
+        Solve(options, &problem, &summary);
+        std::cout << summary.BriefReport() << "\n";
+
+        for (int i = 0; i < 6; ++i) {
+            std::cout << ctx.dist_params[i] << std::endl;
+        }
+        std::cout << std::endl;
+        for (auto& f : ctx.pairs) {
+            std::cout << Eigen::Vector3d{f.t[0], f.t[1], f.t[2]}.norm() << std::endl;
+        }
+    }
+
     ProblemCtx BuildProblem(const RoughCorrelationReport& rough_report) {
         ProblemCtx ctx;
 
@@ -65,9 +162,9 @@ class RsReprojector : public BaseComponent {
         ctx.dist_params[0] = calibration.CameraMatrix()(0, 2);   // cx
         ctx.dist_params[1] = calibration.CameraMatrix()(1, 2);   // cy
         ctx.dist_params[2] = calibration.DistortionCoeffs()(0);  // k1
-        ctx.dist_params[3] = calibration.DistortionCoeffs()(0);  // k2
-        ctx.dist_params[4] = calibration.DistortionCoeffs()(0);  // k3
-        ctx.dist_params[5] = calibration.DistortionCoeffs()(0);  // k4
+        ctx.dist_params[3] = calibration.DistortionCoeffs()(1);  // k2
+        ctx.dist_params[4] = calibration.DistortionCoeffs()(2);  // k3
+        ctx.dist_params[5] = calibration.DistortionCoeffs()(3);  // k4
 
         for (const auto& frame : rough_report.frames) {
             PairCtx pctx;
@@ -164,7 +261,7 @@ int main() {
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
     //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
-    int pos = 38;
+    int pos = 50;
     for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
@@ -226,7 +323,8 @@ int main() {
         ->Run(rough_correlation_report.offset, .5, 1e-4, -100000, 100000,
               &rough_correlation_report);
 
-    ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
+    auto problem_ctx = ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
+    ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx);
 
     std::cout << rough_correlation_report.frames.size() << std::endl;
 

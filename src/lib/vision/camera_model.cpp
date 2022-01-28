@@ -129,13 +129,17 @@ void ProjectPointJacobian(cv::Point3d xyz, cv::Point2d& uv, cv::Mat& A, cv::Mat 
     A = t * ret;
 }
 
+#include <iostream>
 
 // TODO
-void ProjectPointJacobianExtended(double const* xyz, double const* lens_model) {
+void ProjectPointJacobianExtended(double const* xyz, double const* lens_model, double* uv,
+                                  double* du_out, double* dv_out) {
     // x y z fx fy cx cy k0 k1 k2 k3
     double x = xyz[0], y = xyz[1], z = xyz[2];
     double fx = lens_model[0], fy = lens_model[1], cx = lens_model[2], cy = lens_model[3],
            k0 = lens_model[4], k1 = lens_model[5], k2 = lens_model[6], k3 = lens_model[7];
+
+    // std::cout << "CX=" << cx << std::endl;
 
     double a = x / z;
     double b = y / z;
@@ -201,4 +205,31 @@ void ProjectPointJacobianExtended(double const* xyz, double const* lens_model) {
         dvdk2 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk2,
         dvdk3 = dvdy_ * dy_dk * dkDtheta_ * dtheta_dk3;
     // clang-format on
+
+    uv[0] = u;
+    uv[1] = v;
+
+    du_out[0] = dudx;
+    du_out[1] = dudy;
+    du_out[2] = dudz;
+    du_out[3] = dudfx;
+    du_out[4] = dudfy;
+    du_out[5] = dudcx;
+    du_out[6] = dudcy;
+    du_out[7] = dudk0;
+    du_out[8] = dudk1;
+    du_out[9] = dudk2;
+    du_out[10] = dudk3;
+
+    dv_out[0] = dvdx;
+    dv_out[1] = dvdy;
+    dv_out[2] = dvdz;
+    dv_out[3] = dvdfx;
+    dv_out[4] = dvdfy;
+    dv_out[5] = dvdcx;
+    dv_out[6] = dvdcy;
+    dv_out[7] = dvdk0;
+    dv_out[8] = dvdk1;
+    dv_out[9] = dvdk2;
+    dv_out[10] = dvdk3;
 }
