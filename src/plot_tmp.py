@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
 import matplotlib
 
 
-csv = pd.read_csv("data.csv")
+csv = pd.read_csv("out.csv")
 print(csv.values.shape)
 plt.figure()
 # plt.xlim(-.1,.1)
-plt.plot(csv.values[:,0], csv.values[:,1])
-plt.xlabel("sync point position (seconds)")
-plt.ylabel("estimated gyro shift (seconds)")
+plt.plot(csv.values[:,0], csv.values[:,3])
+# plt.xlabel("sync point position (seconds)")
+# plt.ylabel("estimated gyro shift (seconds)")
 plt.savefig("a.png")
 
 # csv = pd.read_csv("trace.csv")
