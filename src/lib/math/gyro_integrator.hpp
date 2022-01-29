@@ -21,6 +21,8 @@ inline void LowpassGyro(Eigen::Vector3d* samples, int length, double divider) {
         out[1] = out[2];
     }
     // reverse pass
+    out[0] = samples[length - 1];
+    out[1] = samples[length - 2];
     for (int j = 2; j < length; ++j) {
         int i = length - j - 1;
         out[2] = b0 * samples[i] + b1 * samples[i + 1] + b2 * samples[i + 2] + a1 * out[2 - 1] +
