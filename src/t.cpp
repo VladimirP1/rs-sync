@@ -102,8 +102,9 @@ struct IntegrateGyroFunction : public ceres::SizedCostFunction<3, 2, 3> {
         // - for first parameter block, size 3x2
         if (jacobians[0]) {
             Eigen::Map<Eigen::Matrix<double, 3, 2, Eigen::RowMajor>> jac1{jacobians[0]};
-            // jac1.block(0, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[0], expand_) + bias_vec;
-            // jac1.block(1, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[1], expand_) + bias_vec;
+            // jac1.block(0, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[0], expand_) +
+            // bias_vec; jac1.block(1, 0, 1, 3) = GetGyroDerivative(gyro_loader_, bounds[1],
+            // expand_) + bias_vec;
             jac1.fill(0);
         }
 
@@ -166,6 +167,7 @@ class RsReprojector : public BaseComponent {
         double t_scale;
         Vector3d rv;
         Vector4d point;
+        double point_z;
         Vector2d observed_a, observed_b;
         double ts_a, ts_b;
     };
@@ -194,17 +196,17 @@ class RsReprojector : public BaseComponent {
               mctx_{mctx} {}
 
         template <typename T>
-        bool operator()(const T* gyro_delay, const T* bias, const T* point, const T* translation, const T* lens_params,
+        bool operator()(const T* gyro_delay, const T* bias, const T* point_z, const T* translation,
                         T* residuals) const {
             // Point
             Matrix<T, 3, 1> zpoint;
-            zpoint << T{mctx_->point[0]/mctx_->point[2]} * point[2], T{mctx_->point[1]/mctx_->point[2]} * point[2], point[2];
+            zpoint << T{mctx_->point[0]}, T{mctx_->point[1]}, T{mctx_->point[2]};
+            zpoint = zpoint / mctx_->point[0] * point_z[0];
 
             // Integrate gyro
             Matrix<T, 2, 1> integration_segment;
             integration_segment << T{mctx_->ts_a} + gyro_delay[0], T{mctx_->ts_b} + gyro_delay[0];
-            // Matrix<T, 3, 1> bias;
-            // bias << T{ctx_->gyro_bias[0]}, T{ctx_->gyro_bias[1]}, T{ctx_->gyro_bias[2]};
+
             Matrix<T, 3, 1> rotation;
             (*integrate_gyro_)(integration_segment.data(), bias, rotation.data());
 
@@ -219,8 +221,8 @@ class RsReprojector : public BaseComponent {
             Matrix<T, 8, 1> lens_params0{ctx_->lens_params.cast<T>()};
 
             // Projection for view A
-            Matrix<T, 2, 1> uv_a;
-            (*project_point_)(zpoint.data(), lens_params0.data(), uv_a.data());
+            // Matrix<T, 2, 1> uv_a;
+            // (*project_point_)(zpoint.data(), lens_params0.data(), uv_a.data());
 
             // Projection for view B
             Matrix<T, 2, 1> uv_b;
@@ -231,11 +233,10 @@ class RsReprojector : public BaseComponent {
             Matrix<T, 2, 1> observed_a{mctx_->observed_a.cast<T>()},
                 observed_b{mctx_->observed_b.cast<T>()};
 
-            residuals[0] = (uv_a - observed_a).norm();
-            residuals[1] = (uv_b - observed_b).norm();
+            // residuals[0] = (uv_a - observed_a).norm();
+            residuals[0] = (uv_b - observed_b).norm();
 
-            // std::cout << residuals[0] << " " << residuals[1] << std::endl;
-
+            // std::cout << residuals[0]  << std::endl;
 
             return true;
         }
@@ -248,28 +249,30 @@ class RsReprojector : public BaseComponent {
         ceres::CostFunctionToFunctor<2, 3, 8>* project_point_;
     };
 
-    double SolveProblem(ProblemCtx &ctx) {
+    double SolveProblem(ProblemCtx& ctx) {
         ceres::Problem problem;
         ceres::CostFunctionToFunctor<3, 2, 3> integrate_gyro_functor{
             new IntegrateGyroFunction(gyro_loader_.get())};
         ceres::CostFunctionToFunctor<2, 3, 8> project_point_functor{new ProjectPointFunction()};
+        int size = 0;
         for (auto& pctx : ctx.pairs) {
             for (auto& mctx : pctx.matches) {
                 ceres::CostFunction* cost_function =
-                    new ceres::AutoDiffCostFunction<CostFunctor, 2, 1, 3, 3, 3, 8>(new CostFunctor(
+                    new ceres::AutoDiffCostFunction<CostFunctor, 1, 1, 3, 1, 3>(new CostFunctor(
                         &integrate_gyro_functor, &project_point_functor, &ctx, &pctx, &mctx));
-                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(2), &ctx.gyro_delay,
-                                         ctx.gyro_bias.data(), mctx.point.data(), pctx.tv.data(), ctx.lens_params.data());
+                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.5), &ctx.gyro_delay,
+                                         ctx.gyro_bias.data(), &mctx.point_z,
+                                         pctx.tv.data());
+                ++size;
             }
         }
-        
 
         ceres::Solver::Options options;
         options.max_num_iterations = 1025;
         options.preconditioner_type = ceres::JACOBI;
         options.linear_solver_type = ceres::ITERATIVE_SCHUR;
-        // options.use_inner_iterations = true;
-        // options.use_nonmonotonic_steps = true;
+        options.use_inner_iterations = true;
+        options.use_nonmonotonic_steps = true;
         options.num_threads = 8;
         options.minimizer_progress_to_stdout = false;
         options.logging_type = ceres::SILENT;
@@ -278,6 +281,7 @@ class RsReprojector : public BaseComponent {
         std::cout << summary.BriefReport() << "\n";
 
         std::cout << "Sync: " << ctx.gyro_delay << std::endl;
+        std::cout << "Size: " << size << std::endl;
 
         // for (int i = 0; i < 6; ++i) {
         //     std::cout << ctx.dist_params[i] << std::endl;
@@ -337,12 +341,15 @@ class RsReprojector : public BaseComponent {
                 auto point4d = Matrix<double, 4, 1>(point4d_mat(0), point4d_mat(1), point4d_mat(2),
                                                     point4d_mat(3));
 
+                if (point4d_mat(2) < .01) continue;
+
                 mctx.rv = Bias(gyro_loader_->GetRotation(pt_a_timestamp + gyro_offset,
                                                          pt_b_timestamp + gyro_offset),
                                ctx.gyro_bias)
                               .ToRotationVector();
                 mctx.t_scale = translation_scale;
                 mctx.point = point4d;
+                mctx.point_z = point4d[2];
                 mctx.observed_a << desc.points_a[i].x, desc.points_a[i].y;
                 mctx.observed_b << desc.points_b[i].x, desc.points_b[i].y;
                 mctx.ts_a = pt_a_timestamp;
@@ -391,7 +398,7 @@ int main(int args, char** argv) {
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
     ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
-        ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
+        ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
     int pos = 42;
     for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
@@ -462,12 +469,15 @@ int main(int args, char** argv) {
     double r_ofs = rough_correlation_report.offset;
     auto problem_ctx2 =
         ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
-    for (double ofs = r_ofs - .03; ofs < r_ofs + .03; ofs += .0005) {
+    ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2);
+
+    for (double ofs = r_ofs - .05; ofs < r_ofs + .03; ofs += .002) {
         // auto problem_ctx2 = problem_ctx;
         problem_ctx2.gyro_delay = ofs;
         double cost = ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2);
         out << ofs << "," << cost << "," << problem_ctx2.gyro_delay << std::endl;
     }
+
 
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
     //     ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
