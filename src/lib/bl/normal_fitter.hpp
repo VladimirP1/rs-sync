@@ -40,6 +40,7 @@ class NormalModel {
 class INormalFitter : public rssync::BaseComponent {
    public:
     virtual NormalModel Fit(const cv::Mat& img) = 0;
+    virtual void FindCenter(const cv::Mat& img, double &x, double &y) = 0;
 };
 
 void RegisterNormalFitter(std::shared_ptr<IContext> ctx, std::string name);

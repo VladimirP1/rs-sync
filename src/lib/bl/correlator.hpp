@@ -10,6 +10,7 @@ class ICorrelator : public rssync::BaseComponent {
    public:
     virtual void SetPatchSizes(cv::Size dst_a, cv::Size dst_b) = 0;
     virtual bool Calculate(int frame_number) = 0;
+    virtual bool RefineOF(int frame_number) = 0;
 };
 
 constexpr const char* kCorrelatorName = "Correlator";

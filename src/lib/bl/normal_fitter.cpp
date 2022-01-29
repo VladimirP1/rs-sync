@@ -213,6 +213,8 @@ class NormalFitterImpl : public INormalFitter {
 
     NormalModel Fit(const cv::Mat& img) override { return fitter_.Fit(img); }
 
+    void FindCenter(const cv::Mat& img, double& x, double& y) override { SubpixelMax(img, x, y); }
+
    private:
     NormalFitter fitter_;
 };
