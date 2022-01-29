@@ -257,6 +257,9 @@ class CorrelatorImpl : public ICorrelator {
             // std::cout << point_a << " -> ";
             // desc.points4d(0,i) = point_a.x / point_a.z * desc.points4d(2,i);// * desc.points4d(3,i);
             // desc.points4d(1,i) = point_a.y / point_a.z * desc.points4d(2,i);// * desc.points4d(3,i);
+            // desc.points4d(0,i) = point_a.x ;// * desc.points4d(3,i);
+            // desc.points4d(1,i) = point_a.y ;
+            // desc.points4d(2,i) = point_a.z ;// * desc.points4d(3,i);
             // auto a = (Pa * desc.points4d.col(i)).t();
             // std::cout << (Pa * desc.points4d.col(i)).t() << std::endl;
 

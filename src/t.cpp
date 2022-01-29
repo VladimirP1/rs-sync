@@ -198,7 +198,7 @@ class RsReprojector : public BaseComponent {
                         T* residuals) const {
             // Point
             Matrix<T, 3, 1> zpoint;
-            zpoint << T{mctx_->point[0]}, T{mctx_->point[1]}, point[2];
+            zpoint << T{mctx_->point[0]/mctx_->point[2]} * point[2], T{mctx_->point[1]/mctx_->point[2]} * point[2], point[2];
 
             // Integrate gyro
             Matrix<T, 2, 1> integration_segment;
@@ -216,23 +216,26 @@ class RsReprojector : public BaseComponent {
             rotated_point += Matrix<T, 3, 1>{translation} * mctx_->point[3] * mctx_->t_scale;
 
             // Cast lens_params to the appropriate type
-            //Matrix<T, 8, 1> lens_params{ctx_->lens_params.cast<T>()};
+            Matrix<T, 8, 1> lens_params0{ctx_->lens_params.cast<T>()};
 
             // Projection for view A
             Matrix<T, 2, 1> uv_a;
-            (*project_point_)(zpoint.data(), lens_params, uv_a.data());
+            (*project_point_)(zpoint.data(), lens_params0.data(), uv_a.data());
 
             // Projection for view B
             Matrix<T, 2, 1> uv_b;
-            (*project_point_)(rotated_point.data(), lens_params, uv_b.data());
+            (*project_point_)(rotated_point.data(), lens_params0.data(), uv_b.data());
 
             // std::cout << uv_b << "\n-------------\n" << std::endl;
             // Distance to observed
             Matrix<T, 2, 1> observed_a{mctx_->observed_a.cast<T>()},
                 observed_b{mctx_->observed_b.cast<T>()};
 
-            residuals[0] = (uv_a - observed_a).squaredNorm();
-            residuals[1] = (uv_b - observed_b).squaredNorm();
+            residuals[0] = (uv_a - observed_a).norm();
+            residuals[1] = (uv_b - observed_b).norm();
+
+            // std::cout << residuals[0] << " " << residuals[1] << std::endl;
+
 
             return true;
         }
@@ -255,7 +258,7 @@ class RsReprojector : public BaseComponent {
                 ceres::CostFunction* cost_function =
                     new ceres::AutoDiffCostFunction<CostFunctor, 2, 1, 3, 3, 3, 8>(new CostFunctor(
                         &integrate_gyro_functor, &project_point_functor, &ctx, &pctx, &mctx));
-                problem.AddResidualBlock(cost_function, nullptr, &ctx.gyro_delay,
+                problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(2), &ctx.gyro_delay,
                                          ctx.gyro_bias.data(), mctx.point.data(), pctx.tv.data(), ctx.lens_params.data());
             }
         }
@@ -296,7 +299,7 @@ class RsReprojector : public BaseComponent {
             calibration.CameraMatrix()(0, 2), calibration.CameraMatrix()(1, 2),
             calibration.DistortionCoeffs()(0), calibration.DistortionCoeffs()(1),
             calibration.DistortionCoeffs()(2), calibration.DistortionCoeffs()(3);
-        ctx.rs_coeff = .25;
+        ctx.rs_coeff = .75;
         ctx.gyro_bias = rough_report.bias_estimate;
         ctx.gyro_delay = rough_report.offset;
 
@@ -379,6 +382,7 @@ int main(int args, char** argv) {
     RegisterNormalFitter(ctx, kNormalFitterName);
     RegisterCorrelator(ctx, kCorrelatorName);
     RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA.bbl.csv");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
     RegisterComponent<RsReprojector>(ctx, "RsReprojector");
 
@@ -386,10 +390,10 @@ int main(int args, char** argv) {
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
-    // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
-    //     ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
+    ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
+        ->SetOrientation(Quaternion<double>::FromRotationVector({-20.*M_PI/180.,0,0}));
 
-    int pos = 38;
+    int pos = 42;
     for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
@@ -447,7 +451,7 @@ int main(int args, char** argv) {
     RoughCorrelationReport rough_correlation_report;
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 1, 1e-2, -100000, 100000, &rough_correlation_report);
+        ->Run(0, 40, 1e-2, -100000, 100000, &rough_correlation_report);
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(rough_correlation_report.offset, .5, 1e-4, -100000, 100000,
@@ -456,10 +460,10 @@ int main(int args, char** argv) {
 
     std::ofstream out("log.csv");
     double r_ofs = rough_correlation_report.offset;
-    auto problem_ctx =
+    auto problem_ctx2 =
         ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
-    for (double ofs = r_ofs - .02; ofs < r_ofs + .02; ofs += .0005) {
-        auto problem_ctx2 = problem_ctx;
+    for (double ofs = r_ofs - .03; ofs < r_ofs + .03; ofs += .0005) {
+        // auto problem_ctx2 = problem_ctx;
         problem_ctx2.gyro_delay = ofs;
         double cost = ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2);
         out << ofs << "," << cost << "," << problem_ctx2.gyro_delay << std::endl;
