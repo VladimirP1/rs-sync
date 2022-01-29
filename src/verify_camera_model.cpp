@@ -20,7 +20,7 @@ int main() {
     auto calibration =
         ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->GetCalibraiton();
 
-    cv::Point3d point{.01, 0, 1};
+    cv::Point3d point{-0.041985, -0.0847903, 1};
 
     {  // Impl 1
         cv::Point2d dist_point;

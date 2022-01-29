@@ -9,84 +9,76 @@
 #include <fstream>
 
 #include <bl/context.hpp>
-#include <bl/gyro_loader.hpp>
-
-#include <math/quaternion.hpp>
+#include <io/bb_csv.hpp>
 
 #include <io/stopwatch.hpp>
 
+#include <math/gyro_integrator.hpp>
+
+#include <iomanip>
+
 using namespace rssync;
 
-Eigen::Vector3d GetGyroDerivative(IGyroLoader* loader, double time, double enlarge) {
-    class CubicBcKernel {
-       public:
-        CubicBcKernel(double B = 0., double C = .5)
-            : P0{(6. - 2. * B) / 6.},
-              P1{0.},
-              P2{(-18. + 12. * B + 6. * C) / 6.},
-              P3{(12. - 9. * B - 6. * C) / 6.},
-              Q0{(8. * B + 24. * C) / 6.},
-              Q1{(-12. * B - 48. * C) / 6.},
-              Q2{(6. * B + 30. * C) / 6.},
-              Q3{(-1. * B - 6. * C) / 6.} {}
-
-        double operator()(double x) const {
-            if (x < 0) x = -x;
-            if (x < 1.) return P0 + P1 * x + P2 * x * x + P3 * x * x * x;
-            if (x < 2.) return Q0 + Q1 * x + Q2 * x * x + Q3 * x * x * x;
-            return 0.;
-        }
-
-       private:
-        double P0, P1, P2, P3, Q0, Q1, Q2, Q3;
-    };
-    static const CubicBcKernel krnl;
-
-    double act_start, act_step;
-
-    Eigen::Vector3d rvs[128];
-    int d = std::ceil(5 * enlarge);
-    if (d > 128) {
-        abort();
-    }
-    loader->GetRawRvs(d / 2, time, act_start, act_step, rvs);
-
-    Eigen::Vector3d rv{0, 0, 0};
-    for (int i = 0; i < d; ++i) {
-        double k = krnl((act_start + i * act_step - time) / act_step / enlarge);
-        rv += rvs[i] * k;
-    }
-    return rv;
-}
-
 int main(int argc, char** argv) {
-    std::ofstream out("out.csv");
+    std::ofstream out("log.csv");
+    std::ifstream in("000458AA_fixed.CSV");
 
-    auto ctx = IContext::CreateContext();
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
-    ctx->ContextLoaded();
+    std::vector<double> timestamps;
+    std::vector<Eigen::Vector3d> rvs;
+    ReadGyroCsv(in, timestamps, rvs);
 
-    auto gyro_loader = ctx->GetComponent<IGyroLoader>(kGyroLoaderName);
+    double samplerate = timestamps.size() / (timestamps.back() - timestamps.front());
 
-    QuaternionGroup<Quaternion<double>> grp;
-
-    double base = atoi(argv[1]);
-    double duration = 1 / 30.;
-    double krnl_enlarge = atof(argv[2]);
-    int count = 0;
-
-    {
-        Stopwatch w;
-        for (double ofs = 0; ofs < 1 / 30.; ofs += .00001) {
-            auto rv = GetGyroDerivative(gyro_loader.get(), base + ofs, krnl_enlarge);
-            ++count;
-            // out << ofs << "," << rv.x() << "," << rv.y() << "," << rv.z() << std::endl;
-            // auto R = gyro_loader->GetRotation(base + ofs, base + duration + ofs);
-            // auto rv = R.ToRotationVector();
-            // out << ofs << "," << rv.x().a << "," << rv.y().a << "," << rv.z().a << std::endl;
-        };
-        std::cout << count << std::endl;
+    for (auto& rv : rvs) {
+        rv /= samplerate;
     }
+
+    GyroIntegrator interator0(rvs.data(), rvs.size());
+    LowpassGyro(rvs.data(), rvs.size(), 30);
+    GyroIntegrator interator(rvs.data(), rvs.size());
+
+    double base = 38;
+    double duration = 1 / 30.;
+    double sweep = 1 / 30.;
+    out << std::fixed << std::setprecision(16);
+    for (double start = base; start < sweep + base; start += .000001) {
+        auto res = interator.IntegrateGyro(start * samplerate, (start + duration) * samplerate);
+        auto res0 = interator0.IntegrateGyro(start * samplerate, (start + duration) * samplerate);
+        auto ds =  res.dt2 - res.dt1;
+        out << start << "," << ds[0] << "," << res.rot.norm() << "," << res.rot[2] << "," << ds[0]
+            << "," << ds[1] << "," << ds[2] << "," << std::endl;
+    }
+
+    // double actual_start, actual_step;
+    // std::vector<Eigen::Vector3d> raw_rvs;
+    // raw_rvs.resize(5001);
+    // gyro_loader->GetRawRvs(raw_rvs.size() / 2, 38., actual_start, actual_step, raw_rvs.data());
+
+    // std::vector<Quaternion<double>> quats;
+
+    // ceres::Grid1D<double, 3> grid{reinterpret_cast<double*>(raw_rvs.data()), 0,
+    //                               static_cast<int>(raw_rvs.size())};
+    // ceres::CubicInterpolator<ceres::Grid1D<double, 3>> interp(grid);
+    // double x[3];
+    // interp.Evaluate(.5, x);
+    // std::cout << x[0] << " " << x[1] << " " << x[2] << std::endl;
+    // grid.GetValue(0, x);
+    // std::cout << x[0] << " " << x[1] << " " << x[2] << std::endl;
+
+    // double base = atoi(argv[1]);
+    // int count = 0;
+    // {
+    //     Stopwatch w;
+    //     for (double ofs = 0; ofs < 1 / 30.; ofs += .00001) {
+    //         interp.Evaluate(ofs / actual_step, x);
+    //         ++count;
+    //         // out << ofs << "," << rv.x() << "," << rv.y() << "," << rv.z() << std::endl;
+    //         // auto R = gyro_loader->GetRotation(base + ofs, base + duration + ofs);
+    //         // auto rv = R.ToRotationVector();
+    //         out << ofs << "," << x[0] << "," << x[1] << "," << x[2] << std::endl;
+    //     };
+    //     std::cout << count << std::endl;
+    // }
 
     return 0;
 }

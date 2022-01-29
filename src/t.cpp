@@ -207,6 +207,9 @@ class RsReprojector : public BaseComponent {
             Matrix<T, 2, 1> integration_segment;
             integration_segment << T{mctx_->ts_a} + gyro_delay[0], T{mctx_->ts_b} + gyro_delay[0];
 
+            // Matrix<T, 3, 1> bias;
+            // bias << T{ctx_->gyro_bias[0]}, T{ctx_->gyro_bias[1]}, T{ctx_->gyro_bias[2]};
+
             Matrix<T, 3, 1> rotation;
             (*integrate_gyro_)(integration_segment.data(), bias, rotation.data());
 
@@ -215,7 +218,8 @@ class RsReprojector : public BaseComponent {
             ceres::AngleAxisRotatePoint(rotation.data(), zpoint.data(), rotated_point.data());
 
             // Translate point
-            rotated_point += Matrix<T, 3, 1>{translation} * mctx_->point[3] * mctx_->t_scale;
+            rotated_point +=
+                Matrix<T, 3, 1>{translation} * mctx_->point[3] * mctx_->t_scale;
 
             // Cast lens_params to the appropriate type
             Matrix<T, 8, 1> lens_params0{ctx_->lens_params.cast<T>()};
@@ -235,6 +239,8 @@ class RsReprojector : public BaseComponent {
 
             // residuals[0] = (uv_a - observed_a).norm();
             residuals[0] = (uv_b - observed_b).norm();
+            residuals[1] = translation[0] * translation[0] + translation[1] * translation[1] +
+                           translation[2] * translation[2] - T{1.};
 
             // std::cout << residuals[0]  << std::endl;
 
@@ -258,11 +264,10 @@ class RsReprojector : public BaseComponent {
         for (auto& pctx : ctx.pairs) {
             for (auto& mctx : pctx.matches) {
                 ceres::CostFunction* cost_function =
-                    new ceres::AutoDiffCostFunction<CostFunctor, 1, 1, 3, 1, 3>(new CostFunctor(
+                    new ceres::AutoDiffCostFunction<CostFunctor, 2, 1, 3, 1, 3>(new CostFunctor(
                         &integrate_gyro_functor, &project_point_functor, &ctx, &pctx, &mctx));
                 problem.AddResidualBlock(cost_function, new ceres::CauchyLoss(.5), &ctx.gyro_delay,
-                                         ctx.gyro_bias.data(), &mctx.point_z,
-                                         pctx.tv.data());
+                                         ctx.gyro_bias.data(), &mctx.point_z, pctx.tv.data());
                 ++size;
             }
         }
@@ -271,10 +276,12 @@ class RsReprojector : public BaseComponent {
         options.max_num_iterations = 1025;
         options.preconditioner_type = ceres::JACOBI;
         options.linear_solver_type = ceres::ITERATIVE_SCHUR;
-        options.use_inner_iterations = true;
+        // options.use_inner_iterations = true;
         options.use_nonmonotonic_steps = true;
         options.num_threads = 8;
         options.minimizer_progress_to_stdout = false;
+        options.function_tolerance = 1e-10;
+        options.parameter_tolerance = 1e-10;
         options.logging_type = ceres::SILENT;
         ceres::Solver::Summary summary;
         Solve(options, &problem, &summary);
@@ -321,9 +328,9 @@ class RsReprojector : public BaseComponent {
             for (int i = 0; i < desc.point_ids.size(); ++i) {
                 MatchCtx mctx;
 
-                if (((size_t)random()) % 100 > 4) {
-                    continue;
-                }
+                // if (((size_t)random()) % 100 > 5) {
+                //     continue;
+                // }
 
                 // We will need 4d point
                 if (!desc.mask_4d[i]) {
@@ -340,8 +347,6 @@ class RsReprojector : public BaseComponent {
                 cv::Mat_<double> point4d_mat = desc.points4d.col(i);
                 auto point4d = Matrix<double, 4, 1>(point4d_mat(0), point4d_mat(1), point4d_mat(2),
                                                     point4d_mat(3));
-
-                if (point4d_mat(2) < .01) continue;
 
                 mctx.rv = Bias(gyro_loader_->GetRotation(pt_a_timestamp + gyro_offset,
                                                          pt_b_timestamp + gyro_offset),
@@ -362,7 +367,7 @@ class RsReprojector : public BaseComponent {
             }
 
             ctx.pairs.push_back(pctx);
-            // break;
+            break;
         }
 
         return ctx;
@@ -397,10 +402,10 @@ int main(int args, char** argv) {
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
-    ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
-        ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
+    // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
+        // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
-    int pos = 42;
+    int pos = 40;
     for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
@@ -417,19 +422,24 @@ int main(int args, char** argv) {
         // desc.t.at<double>(2) << std::endl;
         PairDescription desc;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        desc.enable_debug = false;
+        desc.enable_debug = true;
         ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
         ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
+
+        // ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
+
+        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
+
 
         // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
 
         // ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
 
-        // cv::Mat vis;
-        // if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
-        //     cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
-        // }
+        cv::Mat vis;
+        if (ctx->GetComponent<IVisualizer>(kVisualizerName)->VisualizeCorrelations(vis, i)) {
+            cv::imwrite("out" + std::to_string(i) + "_.jpg", vis);
+        }
 
         // cv::Mat img;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i + 1, img);
@@ -467,17 +477,24 @@ int main(int args, char** argv) {
 
     std::ofstream out("log.csv");
     double r_ofs = rough_correlation_report.offset;
-    auto problem_ctx2 =
+    auto problem_ctx =
         ctx->GetComponent<RsReprojector>("RsReprojector")->BuildProblem(rough_correlation_report);
-    ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2);
+    ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx);
 
     for (double ofs = r_ofs - .05; ofs < r_ofs + .03; ofs += .002) {
-        // auto problem_ctx2 = problem_ctx;
+        auto problem_ctx2 = problem_ctx;
         problem_ctx2.gyro_delay = ofs;
         double cost = ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2);
         out << ofs << "," << cost << "," << problem_ctx2.gyro_delay << std::endl;
     }
 
+    // for (int i = 0; i < 10; ++i) {
+    //     // auto problem_ctx2 = problem_ctx;
+    //     problem_ctx2.gyro_delay = (i &1) ? (r_ofs - .05): (r_ofs+.05);
+    //     double cost =
+    //     ctx->GetComponent<RsReprojector>("RsReprojector")->SolveProblem(problem_ctx2); out << i
+    //     << "," << cost << std::endl;
+    // }
 
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
     //     ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);

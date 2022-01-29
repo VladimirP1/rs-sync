@@ -6,7 +6,7 @@
 #include <tuple>
 
 bool ReadGyroCsv(std::istream& s, std::vector<double>& timestamps,
-                 std::vector<std::tuple<double, double, double>>& rvs) {
+                 std::vector<Eigen::Vector3d>& rvs) {
     std::string line;
     // Parse header
     struct {

@@ -24,8 +24,13 @@ target_link_libraries(verify_camera_model libmath libio libbl Eigen3::Eigen)
 
 # -----
 
+add_executable(ad autodiff.cpp)
+target_link_libraries(ad libbl)
+
+# -----
+
 add_executable(segtree segtree.cpp)
-target_link_libraries(segtree libmath libio libbl Eigen3::Eigen)
+target_link_libraries(segtree libmath libio Eigen3::Eigen)
 
 # -----
 
