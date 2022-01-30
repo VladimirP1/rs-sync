@@ -5,61 +5,6 @@
 #include <Eigen/Eigen>
 #include <unsupported/Eigen/AutoDiff>
 
-inline void LowpassGyro(Eigen::Vector3d* samples, int length, int divider) {
-    if (divider < 2) return;
-    const double ita = 1.0 / tan(M_PI / divider);
-    const double q = sqrt(2.0);
-    const double b0 = 1.0 / (1.0 + q * ita + ita * ita), b1 = 2 * b0, b2 = b0,
-                 a1 = 2.0 * (ita * ita - 1.0) * b0, a2 = -(1.0 - q * ita + ita * ita) * b0;
-
-    Eigen::Vector3d out[3] = {samples[0], samples[1], samples[2]};
-    for (int i = 2; i < length; ++i) {
-        out[2] = b0 * samples[i] + b1 * samples[i - 1] + b2 * samples[i - 2] + a1 * out[2 - 1] +
-                 a2 * out[2 - 2];
-        samples[i - 2] = out[0];
-        // left shift
-        out[0] = out[1];
-        out[1] = out[2];
-    }
-    // reverse pass
-    out[0] = samples[length - 1];
-    out[1] = samples[length - 2];
-    for (int j = 2; j < length; ++j) {
-        int i = length - j - 1;
-        out[2] = b0 * samples[i] + b1 * samples[i + 1] + b2 * samples[i + 2] + a1 * out[2 - 1] +
-                 a2 * out[2 - 2];
-        samples[i + 2] = out[0];
-        // left shift
-        out[0] = out[1];
-        out[1] = out[2];
-    }
-}
-
-inline void UpsampleGyro(Eigen::Vector3d* samples, int length_new, int multiplier) {
-    if (multiplier < 2) return;
-    int length = length_new / multiplier;
-    int half_mult = multiplier / 2;
-    int old_samples_base = length_new - length;
-    std::copy_n(samples, length, samples + old_samples_base);
-
-    for (int i = 0; i < length_new; ++i) {
-        if ((i + half_mult) % multiplier) {
-            samples[i] = Eigen::Vector3d::Zero();
-        } else {
-            samples[i] = samples[i / multiplier + old_samples_base];
-        }
-    }
-
-    LowpassGyro(samples, length_new, multiplier * 4);
-}
-
-inline void DecimateGyro(Eigen::Vector3d* samples, int length, int divider) {
-    if (divider < 2) return;
-    for (int i = 0; i < length / divider; ++i) {
-        samples[i] = samples[i * divider];
-    }
-}
-
 struct GyroIntegrator {
     typedef Eigen::AutoDiffScalar<Eigen::Vector3d> DiffT;
     typedef Eigen::AngleAxis<DiffT> RotT;
@@ -156,6 +101,7 @@ struct GyroIntegrator {
     }
 
    private:
+    /* This function is derived from the same named function in Google's Ceres solver */
     template <int kDataDimension, class T>
     void CubicHermiteSpline(const Eigen::Matrix<T, kDataDimension, 1>& p0,
                             const Eigen::Matrix<T, kDataDimension, 1>& p1,
@@ -197,3 +143,58 @@ struct GyroIntegrator {
 
     SegmentTree<AngleAxisGroup> segment_tree_;
 };
+
+inline void LowpassGyro(Eigen::Vector3d* samples, int length, int divider) {
+    if (divider < 2) return;
+    const double ita = 1.0 / tan(M_PI / divider);
+    const double q = sqrt(2.0);
+    const double b0 = 1.0 / (1.0 + q * ita + ita * ita), b1 = 2 * b0, b2 = b0,
+                 a1 = 2.0 * (ita * ita - 1.0) * b0, a2 = -(1.0 - q * ita + ita * ita) * b0;
+
+    Eigen::Vector3d out[3] = {samples[0], samples[1], samples[2]};
+    for (int i = 2; i < length; ++i) {
+        out[2] = b0 * samples[i] + b1 * samples[i - 1] + b2 * samples[i - 2] + a1 * out[2 - 1] +
+                 a2 * out[2 - 2];
+        samples[i - 2] = out[0];
+        // left shift
+        out[0] = out[1];
+        out[1] = out[2];
+    }
+    // reverse pass
+    out[0] = samples[length - 1];
+    out[1] = samples[length - 2];
+    for (int j = 2; j < length; ++j) {
+        int i = length - j - 1;
+        out[2] = b0 * samples[i] + b1 * samples[i + 1] + b2 * samples[i + 2] + a1 * out[2 - 1] +
+                 a2 * out[2 - 2];
+        samples[i + 2] = out[0];
+        // left shift
+        out[0] = out[1];
+        out[1] = out[2];
+    }
+}
+
+inline void UpsampleGyro(Eigen::Vector3d* samples, int length_new, int multiplier) {
+    if (multiplier < 2) return;
+    int length = length_new / multiplier;
+    int half_mult = multiplier / 2;
+    int old_samples_base = length_new - length;
+    std::copy_n(samples, length, samples + old_samples_base);
+
+    for (int i = 0; i < length_new; ++i) {
+        if ((i + half_mult) % multiplier) {
+            samples[i] = Eigen::Vector3d::Zero();
+        } else {
+            samples[i] = samples[i / multiplier + old_samples_base];
+        }
+    }
+
+    LowpassGyro(samples, length_new, multiplier * 4);
+}
+
+inline void DecimateGyro(Eigen::Vector3d* samples, int length, int divider) {
+    if (divider < 2) return;
+    for (int i = 0; i < length / divider; ++i) {
+        samples[i] = samples[i * divider];
+    }
+}
