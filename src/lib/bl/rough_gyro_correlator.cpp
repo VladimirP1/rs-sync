@@ -26,7 +26,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
 
         sample_rate_ = gyro_loader_->SampleRate();
-        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 30.);
+        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 15.);
 
         integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
@@ -65,8 +65,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
 
         ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
-        ExportGyroOfTraces2(of_data, best_shift, best_bias, "trace.csv");
-        // ReplaceRotations(best_shift, best_bias);
+        ExportGyroOfTracesLpf(of_data, best_shift, best_bias, 3, "trace.csv");
     }
 
    private:
@@ -124,8 +123,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
                 base_inlier = b0;
             }
         }
-        // std::cout << thresh << "\n" << base_inlier << "\n----------\n" << std::endl;
-
+        
         // Main part
         inliers.clear();
         double best_cost = 1;
@@ -198,8 +196,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
     }
 
-    void ExportGyroOfTraces2(const std::vector<FrameInfoT>& of_data, double shift,
-                             Matrix<double, 3, 1> bias_v, std::string filename) {
+    void ExportGyroOfTracesLpf(const std::vector<FrameInfoT>& of_data, double shift,
+                             Matrix<double, 3, 1> bias_v, double lpf_cutoff, std::string filename) {
         std::ofstream out{filename};
         out << std::fixed << std::setprecision(16);
 
@@ -208,56 +206,38 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             auto of_rot = std::get<3>(frame_info);
             of_gyr.push_back(of_rot);
         }
-        double frame_rate = 1. / (std::get<2>(of_data.front()) - std::get<1>(of_data.front())),
-               actual_frame_rate = frame_rate;
-        std::cout << frame_rate << std::endl;
-        of_gyr.resize(of_gyr.size() * 34);
-        UpsampleGyro(of_gyr.data(), of_gyr.size(), 34);
-        frame_rate *= 34;
-        LowpassGyro(of_gyr.data(), of_gyr.size(), frame_rate / 1);
+        double of_data_frame_rate =
+                   1. / (std::get<2>(of_data.front()) - std::get<1>(of_data.front())),
+               of_actual_frame_rate = of_data_frame_rate;
+        int of_upsample = 1000. / of_data_frame_rate;
+        of_data_frame_rate *= of_upsample;
+
+        of_gyr.resize(of_gyr.size() * of_upsample);
+        UpsampleGyro(of_gyr.data(), of_gyr.size(), of_upsample);
+        LowpassGyro(of_gyr.data(), of_gyr.size(), of_data_frame_rate / lpf_cutoff);
         GyroIntegrator of_int(of_gyr.data(), of_gyr.size());
 
+        double gyro_sample_gate = gyro_loader_->SampleRate();
         std::vector<Eigen::Vector3d> gyro_data(gyro_loader_->DataSize());
         gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
-        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 1);
+        LowpassGyro(gyro_data.data(), gyro_data.size(), gyro_sample_gate / lpf_cutoff);
         GyroIntegrator gyro_int(gyro_data.data(), gyro_data.size());
 
         double step = .01;
-        double vid_start = std::get<1>(of_data.front()) + 1. / actual_frame_rate;
+        double vid_start = std::get<1>(of_data.front()) + 1. / of_actual_frame_rate;
         double vid_end = std::get<1>(of_data.back());
 
         for (double ts = vid_start; ts < vid_end; ts += step) {
-            auto gyro = gyro_int.IntegrateGyro((ts + shift) * sample_rate_,
-                                               (ts + step + shift) * sample_rate_);
-            auto of = of_int.IntegrateGyro((ts - vid_start + shift) * frame_rate,
-                                           (ts - vid_start + step + shift) * frame_rate);
+            auto gyro = gyro_int.IntegrateGyro((ts + shift) * gyro_sample_gate,
+                                               (ts + step + shift) * gyro_sample_gate);
+            auto of = of_int.IntegrateGyro((ts - vid_start + shift) * of_data_frame_rate,
+                                           (ts - vid_start + step + shift) * of_data_frame_rate);
             auto rv_gyro = gyro.Bias(bias_v).rot;
 
             out << of.rot.x() << "," << of.rot.y() << "," << of.rot.z() << "," << rv_gyro.x() << ","
                 << rv_gyro.y() << "," << rv_gyro.z() << std::endl;
         }
     }
-
-    // void ReplaceRotations(double best_shift, Matrix<double, 3, 1> best_bias) {
-    //     std::vector<int> good_frames;
-    //     pair_storage_->GetFramesWith(good_frames, false, false, true, false, false);
-    //     std::sort(good_frames.begin(), good_frames.end());
-    //     PairDescription desc;
-
-    //     for (auto frame : good_frames) {
-    //         pair_storage_->Get(frame, desc);
-    //         auto gyro_rot = gyro_loader_->GetRotation(desc.timestamp_a + best_shift,
-    //                                                   desc.timestamp_b + best_shift);
-    //         auto rve = Bias(gyro_rot, best_bias).ToRotationVector();
-    //         cv::Mat_<double> rv(3, 1, CV_64F);
-    //         rv << rve.x(), rve.y(), rve.z();
-    //         cv::Rodrigues(rv, desc.R);
-    //         // desc.t << 0,0,0;
-    //         pair_storage_->Update(frame, desc);
-    //     }
-
-    //     std::cout << "Rotations updated" << std::endl;
-    // }
 
     std::shared_ptr<IPairStorage> pair_storage_;
     std::shared_ptr<IGyroLoader> gyro_loader_;
