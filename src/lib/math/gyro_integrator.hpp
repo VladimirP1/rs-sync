@@ -5,7 +5,8 @@
 #include <Eigen/Eigen>
 #include <unsupported/Eigen/AutoDiff>
 
-inline void LowpassGyro(Eigen::Vector3d* samples, int length, double divider) {
+inline void LowpassGyro(Eigen::Vector3d* samples, int length, int divider) {
+    if (divider < 2) return;
     const double ita = 1.0 / tan(M_PI / divider);
     const double q = sqrt(2.0);
     const double b0 = 1.0 / (1.0 + q * ita + ita * ita), b1 = 2 * b0, b2 = b0,
@@ -31,6 +32,31 @@ inline void LowpassGyro(Eigen::Vector3d* samples, int length, double divider) {
         // left shift
         out[0] = out[1];
         out[1] = out[2];
+    }
+}
+
+inline void UpsampleGyro(Eigen::Vector3d* samples, int length_new, int multiplier) {
+    if (multiplier < 2) return;
+    int length = length_new / multiplier;
+    int half_mult = multiplier / 2;
+    int old_samples_base = length_new - length;
+    std::copy_n(samples, length, samples + old_samples_base);
+
+    for (int i = 0; i < length_new; ++i) {
+        if ((i + half_mult) % multiplier) {
+            samples[i] = Eigen::Vector3d::Zero();
+        } else {
+            samples[i] = samples[i / multiplier + old_samples_base];
+        }
+    }
+
+    LowpassGyro(samples, length_new, multiplier * 4);
+}
+
+inline void DecimateGyro(Eigen::Vector3d* samples, int length, int divider) {
+    if (divider < 2) return;
+    for (int i = 0; i < length / divider; ++i) {
+        samples[i] = samples[i * divider];
     }
 }
 
@@ -84,6 +110,8 @@ struct GyroIntegrator {
         };
     };
 
+    GyroIntegrator() {}
+
     GyroIntegrator(Eigen::Vector3d* samples, int length) {
         std::vector<RotT> v;
         for (int i = 0; i < length; ++i) {
@@ -95,7 +123,10 @@ struct GyroIntegrator {
         segment_tree_ = {v.begin(), v.end()};
     }
 
-    GyroThunk IntegrateGyro(double t1, double t2) {
+    GyroThunk IntegrateGyro(double t1, double t2) const {
+        t1 = std::max(std::min(t1, static_cast<double>(segment_tree_.Size()) - 3.), 1.);
+        t2 = std::max(std::min(t2, static_cast<double>(segment_tree_.Size()) - 3.), 1.);
+
         const int n1 = std::floor(t1);
         const int n2 = std::floor(t2);
         RVT sum1, sum2, dsum1, dsum2;
@@ -130,7 +161,7 @@ struct GyroIntegrator {
                             const Eigen::Matrix<T, kDataDimension, 1>& p1,
                             const Eigen::Matrix<T, kDataDimension, 1>& p2,
                             const Eigen::Matrix<T, kDataDimension, 1>& p3, const double x, T* f,
-                            T* dfdx) {
+                            T* dfdx) const {
         typedef Eigen::Matrix<T, kDataDimension, 1> VType;
         const VType a = 0.5 * (-p0 + 3.0 * p1 - 3.0 * p2 + p3);
         const VType b = 0.5 * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3);

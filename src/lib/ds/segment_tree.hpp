@@ -13,10 +13,9 @@ class SegmentTree {
     SegmentTree() {}
 
     template <typename I,
-              std::enable_if_t<
-                  std::is_same<typename std::iterator_traits<I>::value_type,
-                               typename G::value_type>::value,
-                  bool> = true>
+              std::enable_if_t<std::is_same<typename std::iterator_traits<I>::value_type,
+                                            typename G::value_type>::value,
+                               bool> = true>
     SegmentTree(I begin, I end) {
         data_size_ = std::distance(begin, end);
         if (data_size_ == 0) {
@@ -35,6 +34,8 @@ class SegmentTree {
         return QueryImpl(l, r);
     }
 
+    size_t Size() const { return data_size_; }
+
    protected:
     G group_;
 
@@ -46,8 +47,7 @@ class SegmentTree {
     size_t data_size_;
     std::vector<typename G::value_type> data_;
 
-    typename G::value_type QueryImpl(size_t v, size_t cl, size_t cr, size_t ql,
-                                     size_t qr) const {
+    typename G::value_type QueryImpl(size_t v, size_t cl, size_t cr, size_t ql, size_t qr) const {
         if (ql > qr) {
             return group_.unit();
         }
@@ -55,9 +55,8 @@ class SegmentTree {
             return data_[v];
         }
         size_t mid = (cl + cr) / 2;
-        return group_.add(
-            QueryImpl(2 * v, cl, mid, ql, std::min(qr, mid)),
-            QueryImpl(2 * v + 1, mid + 1, cr, std::max(ql, mid + 1), qr));
+        return group_.add(QueryImpl(2 * v, cl, mid, ql, std::min(qr, mid)),
+                          QueryImpl(2 * v + 1, mid + 1, cr, std::max(ql, mid + 1), qr));
     }
 
     template <typename I>

@@ -3,11 +3,17 @@
 #include "pair_storage.hpp"
 #include "gyro_loader.hpp"
 
+#include <math/gyro_integrator.hpp>
+
 #include <fstream>
 #include <tuple>
 #include <cmath>
+#include <iostream>
+#include <iomanip>
 
 #include <opencv2/calib3d.hpp>
+
+using Eigen::Matrix;
 
 namespace rssync {
 class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
@@ -15,6 +21,14 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {
         pair_storage_ = ctx_.lock()->GetComponent<IPairStorage>(kPairStorageName);
         gyro_loader_ = ctx_.lock()->GetComponent<IGyroLoader>(kGyroLoaderName);
+
+        std::vector<Eigen::Vector3d> gyro_data(gyro_loader_->DataSize());
+        gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
+
+        sample_rate_ = gyro_loader_->SampleRate();
+        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 30.);
+
+        integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
     void Run(double initial_offset, double search_radius, double search_step, int start_frame,
@@ -51,12 +65,17 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
 
         ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
-        ExportGyroOfTraces(of_data, best_shift, best_bias, "trace.csv");
+        ExportGyroOfTraces2(of_data, best_shift, best_bias, "trace.csv");
         // ReplaceRotations(best_shift, best_bias);
     }
 
    private:
-    using FrameInfoT = std::tuple<int, double, double, Quaternion<Jet<double, 3>>>;
+    using FrameInfoT = std::tuple<int, double, double, Eigen::Vector3d>;
+
+    template <class T>
+    Eigen::AngleAxis<T> ToAngleAxis(const Eigen::Matrix<T, 3, 1>& v) const {
+        return {v.norm(), v.normalized()};
+    }
 
     void FillOfData(std::vector<FrameInfoT>& of_data, int start_frame, int end_frame) const {
         std::vector<int> good_frames;
@@ -69,28 +88,23 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             if (frame >= end_frame || frame < start_frame) continue;
             pair_storage_->Get(frame, desc);
             cv::Rodrigues(desc.R, rv);
-            of_data.emplace_back(
-                frame, desc.timestamp_a, desc.timestamp_b,
-                Quaternion<Jet<double, 3>>::FromRotationVector(
-                    {Jet<double, 3>{rv(0)}, Jet<double, 3>{rv(1)}, Jet<double, 3>{rv(2)}}));
+            of_data.emplace_back(frame, desc.timestamp_a, desc.timestamp_b,
+                                 Eigen::Vector3d{rv(0), rv(1), rv(2)});
         }
     }
 
     double RobustCostFunction(const std::vector<FrameInfoT>& of_data, std::vector<int>& inliers,
-                              double shift, Matrix<double, 3, 1>& bias, int iterations = 20,
+                              double shift, Eigen::Matrix<double, 3, 1>& bias, int iterations = 20,
                               double req_inlier_ratio = 1 / 2.) const {
-        std::vector<Matrix<double, 3, 1>> biases;
+        std::vector<Eigen::Matrix<double, 3, 1>> biases;
         for (auto frame_info : of_data) {
             auto of_rot = std::get<3>(frame_info);
-            auto gyro_rot = gyro_loader_->GetRotation(std::get<1>(frame_info) + shift,
-                                                      std::get<2>(frame_info) + shift);
-
-            auto error = gyro_rot * of_rot.inverse();
-            auto bias = GetBiasForOffset(error);
-            biases.push_back(bias);
+            auto gyro = integrator_.IntegrateGyro((std::get<1>(frame_info) + shift) * sample_rate_,
+                                                  (std::get<2>(frame_info) + shift) * sample_rate_);
+            biases.push_back(gyro.FindBias(of_rot));
         }
 
-        Matrix<double, 3, 1> base_inlier{};
+        Eigen::Vector3d base_inlier{};
         double thresh = std::numeric_limits<double>::max();
         std::vector<double> norms;
         // Estimate the inlier threshold
@@ -110,11 +124,12 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
                 base_inlier = b0;
             }
         }
+        // std::cout << thresh << "\n" << base_inlier << "\n----------\n" << std::endl;
 
         // Main part
         inliers.clear();
         double best_cost = 1;
-        Matrix<double, 3, 1> best_bias{};
+        Eigen::Vector3d best_bias{};
 
         bias = {0, 0, 0};
         inliers.clear();
@@ -133,11 +148,13 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         for (auto j : inliers) {
             const auto& frame_info = of_data[j];
             auto of_rot = std::get<3>(frame_info);
-            auto gyro_rot = gyro_loader_->GetRotation(std::get<1>(frame_info) + shift,
-                                                      std::get<2>(frame_info) + shift);
+            auto gyro = integrator_.IntegrateGyro((std::get<1>(frame_info) + shift) * sample_rate_,
+                                                  (std::get<2>(frame_info) + shift) * sample_rate_);
 
-            auto residual =
-                (Bias(gyro_rot, bias) * Bias(of_rot, {}).inverse()).ToRotationVector().norm();
+            auto residual = Eigen::AngleAxis<double>(ToAngleAxis(gyro.Bias(bias).rot) *
+                                                     ToAngleAxis(of_rot).inverse())
+                                .angle();
+
             cost += log(1. + residual * 100.);
             count += 1;
         }
@@ -162,7 +179,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
             std::vector<int> inliers;
             double cost = RobustCostFunction(of_data, inliers, shift, bias);
 
-            out << shift << "," << cost << std::endl;
+            out << shift << "," << cost << "\n";
         }
     }
 
@@ -171,41 +188,81 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         std::ofstream out{filename};
 
         for (auto frame_info : of_data) {
-            double x, y, z;
             auto of_rot = std::get<3>(frame_info);
-            auto gyro_rot = gyro_loader_->GetRotation(std::get<1>(frame_info) + shift,
-                                                      std::get<2>(frame_info) + shift);
-            auto rv_of = Bias(of_rot, {}).ToRotationVector();
-            auto rv_gyro = Bias(gyro_rot, bias_v).ToRotationVector();
+            auto gyro = integrator_.IntegrateGyro((std::get<1>(frame_info) + shift) * sample_rate_,
+                                                  (std::get<2>(frame_info) + shift) * sample_rate_);
+            auto rv_gyro = gyro.Bias(bias_v).rot;
 
-            out << rv_of.x() << "," << rv_of.y() << "," << rv_of.z() << "," << rv_gyro.x() << ","
+            out << of_rot.x() << "," << of_rot.y() << "," << of_rot.z() << "," << rv_gyro.x() << ","
                 << rv_gyro.y() << "," << rv_gyro.z() << std::endl;
         }
     }
 
-    void ReplaceRotations(double best_shift, Matrix<double, 3, 1> best_bias) {
-        std::vector<int> good_frames;
-        pair_storage_->GetFramesWith(good_frames, false, false, true, false, false);
-        std::sort(good_frames.begin(), good_frames.end());
-        PairDescription desc;
+    void ExportGyroOfTraces2(const std::vector<FrameInfoT>& of_data, double shift,
+                             Matrix<double, 3, 1> bias_v, std::string filename) {
+        std::ofstream out{filename};
+        out << std::fixed << std::setprecision(16);
 
-        for (auto frame : good_frames) {
-            pair_storage_->Get(frame, desc);
-            auto gyro_rot = gyro_loader_->GetRotation(desc.timestamp_a + best_shift,
-                                                      desc.timestamp_b + best_shift);
-            auto rve = Bias(gyro_rot, best_bias).ToRotationVector();
-            cv::Mat_<double> rv(3, 1, CV_64F);
-            rv << rve.x(), rve.y(), rve.z();
-            cv::Rodrigues(rv, desc.R);
-            // desc.t << 0,0,0;
-            pair_storage_->Update(frame, desc);
+        std::vector<Eigen::Vector3d> of_gyr;
+        for (auto frame_info : of_data) {
+            auto of_rot = std::get<3>(frame_info);
+            of_gyr.push_back(of_rot);
         }
+        double frame_rate = 1. / (std::get<2>(of_data.front()) - std::get<1>(of_data.front())),
+               actual_frame_rate = frame_rate;
+        std::cout << frame_rate << std::endl;
+        of_gyr.resize(of_gyr.size() * 34);
+        UpsampleGyro(of_gyr.data(), of_gyr.size(), 34);
+        frame_rate *= 34;
+        LowpassGyro(of_gyr.data(), of_gyr.size(), frame_rate / 1);
+        GyroIntegrator of_int(of_gyr.data(), of_gyr.size());
 
-        std::cout << "Rotations updated" << std::endl;
+        std::vector<Eigen::Vector3d> gyro_data(gyro_loader_->DataSize());
+        gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
+        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 1);
+        GyroIntegrator gyro_int(gyro_data.data(), gyro_data.size());
+
+        double step = .01;
+        double vid_start = std::get<1>(of_data.front()) + 1. / actual_frame_rate;
+        double vid_end = std::get<1>(of_data.back());
+
+        for (double ts = vid_start; ts < vid_end; ts += step) {
+            auto gyro = gyro_int.IntegrateGyro((ts + shift) * sample_rate_,
+                                               (ts + step + shift) * sample_rate_);
+            auto of = of_int.IntegrateGyro((ts - vid_start + shift) * frame_rate,
+                                           (ts - vid_start + step + shift) * frame_rate);
+            auto rv_gyro = gyro.Bias(bias_v).rot;
+
+            out << of.rot.x() << "," << of.rot.y() << "," << of.rot.z() << "," << rv_gyro.x() << ","
+                << rv_gyro.y() << "," << rv_gyro.z() << std::endl;
+        }
     }
+
+    // void ReplaceRotations(double best_shift, Matrix<double, 3, 1> best_bias) {
+    //     std::vector<int> good_frames;
+    //     pair_storage_->GetFramesWith(good_frames, false, false, true, false, false);
+    //     std::sort(good_frames.begin(), good_frames.end());
+    //     PairDescription desc;
+
+    //     for (auto frame : good_frames) {
+    //         pair_storage_->Get(frame, desc);
+    //         auto gyro_rot = gyro_loader_->GetRotation(desc.timestamp_a + best_shift,
+    //                                                   desc.timestamp_b + best_shift);
+    //         auto rve = Bias(gyro_rot, best_bias).ToRotationVector();
+    //         cv::Mat_<double> rv(3, 1, CV_64F);
+    //         rv << rve.x(), rve.y(), rve.z();
+    //         cv::Rodrigues(rv, desc.R);
+    //         // desc.t << 0,0,0;
+    //         pair_storage_->Update(frame, desc);
+    //     }
+
+    //     std::cout << "Rotations updated" << std::endl;
+    // }
 
     std::shared_ptr<IPairStorage> pair_storage_;
     std::shared_ptr<IGyroLoader> gyro_loader_;
+    GyroIntegrator integrator_;
+    double sample_rate_;
 };
 
 void RegisterRoughGyroCorrelator(std::shared_ptr<IContext> ctx, std::string name) {

@@ -1,12 +1,15 @@
 #pragma once
 #include "component.hpp"
 
-#include <math/quaternion.hpp>
+#include <Eigen/Eigen>
+
+#include <vector>
+
 namespace rssync {
 
 struct RoughCorrelationReport {
     double offset{};
-    Matrix<double, 3, 1> bias_estimate{};
+    Eigen::Matrix<double, 3, 1> bias_estimate{};
     std::vector<int> frames;
 };
 

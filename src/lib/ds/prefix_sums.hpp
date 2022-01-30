@@ -13,10 +13,9 @@ class PrefixSums {
     PrefixSums() {}
 
     template <typename I,
-              std::enable_if_t<
-                  std::is_same<typename std::iterator_traits<I>::value_type,
-                               typename G::value_type>::value,
-                  bool> = true>
+              std::enable_if_t<std::is_same<typename std::iterator_traits<I>::value_type,
+                                            typename G::value_type>::value,
+                               bool> = true>
     PrefixSums(I begin, I end) {
         data_ = {begin, end};
         BuildImpl();
@@ -29,12 +28,13 @@ class PrefixSums {
         return QueryImpl(l, r);
     }
 
+    size_t Size() const { return data_.size(); }
+
    protected:
     G group_;
 
     typename G::value_type QueryImpl(size_t l, size_t r) const {
-        return group_.add(group_.inv(l ? data_[l - 1] : group_.unit()),
-                          data_[r]);
+        return group_.add(group_.inv(l ? data_[l - 1] : group_.unit()), data_[r]);
     }
 
    private:
@@ -46,4 +46,3 @@ class PrefixSums {
         }
     }
 };
-

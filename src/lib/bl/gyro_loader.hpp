@@ -1,16 +1,19 @@
 #pragma once
 #include "component.hpp"
 
-#include <math/quaternion.hpp>
+#include <Eigen/Eigen>
 
 namespace rssync {
 
 class IGyroLoader : public BaseComponent {
    public:
-    using QuatT = Quaternion<ceres::Jet<double, 3>>;
-    virtual void SetOrientation(Quaternion<double> orient) = 0;
-    virtual QuatT GetRotation(double from_sec, double to_sec) const = 0;
-    virtual bool GetRawRvs(int n, double center, double& actual_start, double& act_step,  Eigen::Vector3d*out_rvs) const = 0;
+    virtual size_t DataSize() const = 0;
+
+    virtual void GetData(Eigen::Vector3d* ptr, size_t size) const = 0;
+
+    virtual double SampleRate() const = 0;
+
+    virtual void SetOrientation(Eigen::Vector3d orientation) = 0;
 };
 
 void RegisterGyroLoader(std::shared_ptr<IContext> ctx, std::string name, std::string filename);
