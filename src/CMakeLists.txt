@@ -29,6 +29,11 @@ target_link_libraries(ad libbl)
 
 # -----
 
+add_executable(polynomial polynomial.cpp)
+target_link_libraries(polynomial Eigen3::Eigen)
+
+# -----
+
 add_executable(segtree segtree.cpp)
 target_link_libraries(segtree libmath libio Eigen3::Eigen)
 
