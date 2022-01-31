@@ -58,8 +58,8 @@ int main(int args, char** argv) {
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
         // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
-    int pos = 42;
-    for (int i = 30 * pos; i < 30 * pos + 30 * 2; ++i) {
+    int pos = 38;
+    for (int i = 30 * pos; i < 30 * pos + 60; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -121,7 +121,7 @@ int main(int args, char** argv) {
     RoughCorrelationReport rough_correlation_report;
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 4, 1e-1, -100000, 100000, &rough_correlation_report);
+        ->Run(0, 2, 1e-1, -100000, 100000, &rough_correlation_report);
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(rough_correlation_report.offset, .5, 1e-3, -100000, 100000,

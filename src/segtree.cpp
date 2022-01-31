@@ -33,8 +33,7 @@ int main(int argc, char** argv) {
         rv /= samplerate;
     }
 
-    GyroIntegrator interator0(rvs.data(), rvs.size());
-    // LowpassGyro(rvs.data(), rvs.size(), 10);
+    LowpassGyro(rvs.data(), rvs.size(), 10);
     GyroIntegrator interator(rvs.data(), rvs.size());
 
     double base = 38;
@@ -43,11 +42,11 @@ int main(int argc, char** argv) {
     out << std::fixed << std::setprecision(16);
     int count = 0;
     {
-        Stopwatch w;
-        for (double start = base; start < sweep + base; start += .000001) {
+        Stopwatch w{"integration"};
+        for (double start = base; start < sweep + base; start += .00001) {
             auto res = interator.IntegrateGyro(start * samplerate, (start + duration) * samplerate);
             auto ds = res.dt2 - res.dt1;
-            // out << start << "," << ds[1] << "," << res.rot[1] << std::endl;
+            out << start << "," << ds[0] << "," << res.rot[0] * 180 / M_PI << "\n"; 
             ++count;
         }
     }

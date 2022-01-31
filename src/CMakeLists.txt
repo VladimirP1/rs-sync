@@ -9,6 +9,9 @@ find_package(nlohmann_json REQUIRED)
 # ceres
 find_package(Ceres REQUIRED)
 
+# gmp
+find_package(gmp REQUIRED)
+
 # own lib
 add_subdirectory(lib)
 
@@ -30,7 +33,7 @@ target_link_libraries(ad libbl)
 # -----
 
 add_executable(polynomial polynomial.cpp)
-target_link_libraries(polynomial Eigen3::Eigen)
+target_link_libraries(polynomial gmp::GMPXX gmp::GMP Eigen3::Eigen)
 
 # -----
 

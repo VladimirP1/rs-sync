@@ -65,7 +65,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
 
         ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
-        ExportGyroOfTracesLpf(of_data, best_shift, best_bias, 3, "trace.csv");
+        ExportGyroOfTraces(of_data, best_shift, best_bias, "trace.csv");
+        // ExportGyroOfTracesLpf(of_data, best_shift, best_bias, 3, "trace.csv");
     }
 
    private:
@@ -123,7 +124,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
                 base_inlier = b0;
             }
         }
-        
+
         // Main part
         inliers.clear();
         double best_cost = 1;
@@ -191,7 +192,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
                                                   (std::get<2>(frame_info) + shift) * sample_rate_);
             auto rv_gyro = gyro.Bias(bias_v).rot;
 
-            out << of_rot.x() << "," << of_rot.y() << "," << of_rot.z() << "," << rv_gyro.x() << ","
+            out << std::get<1>(frame_info) + shift << "," << of_rot.x() << "," << of_rot.y() << "," << of_rot.z() << "," << rv_gyro.x() << ","
                 << rv_gyro.y() << "," << rv_gyro.z() << std::endl;
         }
     }
@@ -234,7 +235,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
                                            (ts - vid_start + step + shift) * of_data_frame_rate);
             auto rv_gyro = gyro.Bias(bias_v).rot;
 
-            out << of.rot.x() << "," << of.rot.y() << "," << of.rot.z() << "," << rv_gyro.x() << ","
+            out << ts - vid_start << "," << of.rot.x() << "," << of.rot.y() << "," << of.rot.z() << "," << rv_gyro.x() << ","
                 << rv_gyro.y() << "," << rv_gyro.z() << std::endl;
         }
     }

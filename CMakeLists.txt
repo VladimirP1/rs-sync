@@ -16,6 +16,7 @@ set( CONAN_REQUIREMENTS
     ceres-solver/2.0.0
     nlohmann_json/3.10.5
     catch2/2.13.8
+    gmp/6.2.1
 )
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
