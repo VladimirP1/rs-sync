@@ -37,4 +37,7 @@ foreach(TYPE ${CMAKE_CONFIGURATION_TYPES})
                         SETTINGS ${settings})
 endforeach()
 
+add_library(rtl INTERFACE)
+target_include_directories(rtl INTERFACE thirdparty/rtl)
+
 add_subdirectory(src)

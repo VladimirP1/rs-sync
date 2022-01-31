@@ -17,8 +17,8 @@ add_subdirectory(lib)
 
 # AddressSanitizer
 
-set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+# set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+# set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 
 # ---- Executable targets ----
 
@@ -33,7 +33,12 @@ target_link_libraries(ad libbl)
 # -----
 
 add_executable(polynomial polynomial.cpp)
-target_link_libraries(polynomial gmp::GMPXX gmp::GMP Eigen3::Eigen)
+target_link_libraries(polynomial libmath gmp::GMPXX gmp::GMP Eigen3::Eigen)
+
+# -----
+
+add_executable(ninepoint ninepoint_ransac.cpp)
+target_link_libraries(ninepoint libmath rtl gmp::GMPXX gmp::GMP Eigen3::Eigen)
 
 # -----
 
