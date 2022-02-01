@@ -32,13 +32,13 @@ target_link_libraries(ad libbl)
 
 # -----
 
-add_executable(polynomial polynomial.cpp)
-target_link_libraries(polynomial libmath gmp::GMPXX gmp::GMP Eigen3::Eigen)
+# add_executable(polynomial polynomial.cpp)
+# target_link_libraries(polynomial libmath gmp::GMPXX gmp::GMP Eigen3::Eigen)
 
 # -----
 
 add_executable(ninepoint ninepoint_ransac.cpp)
-target_link_libraries(ninepoint libmath rtl gmp::GMPXX gmp::GMP Eigen3::Eigen)
+target_link_libraries(ninepoint libmath rtl Eigen3::Eigen)
 
 # -----
 

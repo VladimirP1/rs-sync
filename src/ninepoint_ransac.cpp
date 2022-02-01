@@ -40,9 +40,9 @@ void SetRow(int row, Eigen::Matrix<double, 9, 9>& A, Eigen::Matrix<double, 9, 9>
     // clang-format on
 }
 
-Eigen::Matrix<Polynomial<mpq_class, 18>, 9, 9> MergeAB(Eigen::Matrix<double, 9, 9> A,
+Eigen::Matrix<Polynomial<double, 20>, 9, 9> MergeAB(Eigen::Matrix<double, 9, 9> A,
                                                        Eigen::Matrix<double, 9, 9> B) {
-    using P = Polynomial<mpq_class, 18>;
+    using P = Polynomial<double, 20>;
     return B.cast<P>() + (A.cast<P>() * P{0, 1});
 }
 
@@ -60,10 +60,10 @@ double SolveForK(Eigen::Matrix<double, 9, 9> A, Eigen::Matrix<double, 9, 9> B) {
 
     for (int j = 0; j < deg_P; ++j) {
         if (j + 1 < deg_P) C(j + 1, j) = 1;
-        C(j, deg_P - 1) = -det_P.k[j].get_d();
+        C(j, deg_P - 1) = -det_P.k[j];
     }
 
-    std::cout << Eigen::JacobiSVD<decltype(C)>(C).singularValues().transpose() << std::endl;
+    // std::cout << Eigen::JacobiSVD<decltype(C)>(C).singularValues().transpose() << std::endl;
 
     return Eigen::JacobiSVD<decltype(C)>(C).singularValues().tail(1)[0];
 }
@@ -184,8 +184,9 @@ class EmEstimator
 void DecomposeEssential(Eigen::Matrix3d E, Eigen::Matrix3d& R1, Eigen::Matrix3d& R2,
                         Eigen::Vector3d& t);
 
+
 int main() {
-    srand((unsigned int)time(0));
+    srand((unsigned int)std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
     std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> points;
 
@@ -211,7 +212,7 @@ int main() {
                 std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>>
         ransac(&est);
 
-    ransac.SetParamIteration(100);
+    ransac.SetParamIteration(1000);
     ransac.SetParamThreshold(1e-7);
     std::pair<Eigen::Matrix3d, double> model;
     ransac.FindBest(model, points, points.size(), 9);
@@ -225,33 +226,6 @@ int main() {
     r2.fromRotationMatrix(R2);
     std::cout << "R1: " << r1.angle() << "  R2: " << r2.angle() << std::endl;
     std::cout << "k: " << model.second << std::endl;
-
-    // std::vector<Eigen::Vector3d> points1, points2;
-
-    // for (int i = 0; i < 9; ++i) {
-    //     Eigen::Vector3d p1 = Eigen::Vector3d::Random();
-    //     Eigen::Vector3d p2 = p1;
-    //     p1[2] = 0;
-    //     p2[2] = 1;
-    //     p2[0] *= .8;
-    //     p2[1] *= .8;
-    //     p2[0] += .1;
-    //     p2[1] += .1;
-
-    //     points1.push_back(p1);
-    //     points2.push_back(p2);
-    // }
-
-    // auto E = FindEssentialMat9(points1, points2);
-
-    // Eigen::Matrix3d R1, R2;
-    // Eigen::Vector3d t;
-    // DecomposeEssential(E, R1, R2, t);
-    // std::cout << "R1:\n" << R1 << "\n\nR2:\n" << R2 << "\n\nt:\n" << t << std::endl;
-    // Eigen::AngleAxis<double> r1, r2;
-    // r1.fromRotationMatrix(R1);
-    // r2.fromRotationMatrix(R2);
-    // std::cout << "R1: " << r1.angle() << "  R2: " << r2.angle() << std::endl;
 
     return 0;
 }

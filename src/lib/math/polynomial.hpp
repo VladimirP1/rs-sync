@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Eigen/Eigen>
-#include <iostream>
+
 template <class T, int D>
 struct Polynomial {
     using MatT = Eigen::Matrix<T, D + 1, 1>;
@@ -29,6 +29,7 @@ struct Polynomial {
         for (int p = 0; p <= D; ++p) {
             for (int i = 0; i <= p; ++i) {
                 prod.k[p] += k[i] * other.k[p - i];
+                if (!std::isfinite(prod.k[p])) abort();
             }
         }
 
@@ -68,17 +69,18 @@ struct Polynomial {
         if (divisor.Degree() < 0) abort();
 
         Polynomial remainder(*this), q;
-        int target_degree = remainder.Degree() - divisor.Degree();
         while (true) {
-            int shift = remainder.Degree() - divisor.Degree();
-            if (shift < 0) break;
+            int rd = remainder.Degree(), dd = divisor.Degree(), shift = rd - dd;
+            if (rd - dd < 0) break;
             Polynomial shifted = divisor >> shift;
-            q.k[shift] = remainder.k[remainder.Degree()] / shifted.k[shifted.Degree()];
+            q.k[shift] = remainder.k[rd] / shifted.k[dd + shift];
+            if (!std::isfinite(q.k[shift])) abort();
             shifted *= q.k[shift];
             remainder -= shifted;
         }
 
-        if (remainder.Degree() >= 0) abort();
+        // This check only works properly when working with bignum rationals
+        // if (remainder.Degree() >= 0) {abort();}
 
         return q;
     }
@@ -118,9 +120,9 @@ struct Polynomial {
 
     MatT coeffs() const { return MatT{k}; }
 
-    int Degree() const {
+    int Degree(double eps = 1e-12) const {
         for (int i = D + 1; i--;) {
-            if (!(k[i] == 0)) {
+            if (!(fabs(k[i]) < eps)) {
                 return i;
             }
         }
