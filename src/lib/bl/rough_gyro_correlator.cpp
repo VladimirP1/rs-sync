@@ -65,6 +65,8 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
         }
 
         ExportSyncPlot(of_data, initial_offset, search_radius, search_step, "out.csv");
+
+        // best_bias << 0,0,0;
         ExportGyroOfTraces(of_data, best_shift, best_bias, "trace.csv");
         // ExportGyroOfTracesLpf(of_data, best_shift, best_bias, 3, "trace.csv");
     }

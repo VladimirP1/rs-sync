@@ -1,7 +1,7 @@
-add_library(libvision vision/calibration.cpp vision/camera_model.cpp vision/utils.cpp)
+add_library(libvision vision/calibration.cpp vision/camera_model.cpp vision/utils.cpp vision/ninepoint.cpp)
 target_include_directories(libvision PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(libvision PUBLIC opencv::opencv)
-target_link_libraries(libvision PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(libvision PRIVATE nlohmann_json::nlohmann_json rtl Eigen3::Eigen)
 install(TARGETS libvision)
 
 # -----

@@ -121,10 +121,10 @@ int main(int args, char** argv) {
     RoughCorrelationReport rough_correlation_report;
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 2, 1e-1, -100000, 100000, &rough_correlation_report);
+        ->Run(0, 0.1, 1e-1, -100000, 100000, &rough_correlation_report);
 
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(rough_correlation_report.offset, .5, 1e-3, -100000, 100000,
+        ->Run(rough_correlation_report.offset, .1, 1e-3, -100000, 100000,
               &rough_correlation_report);
     std::cout << rough_correlation_report.frames.size() << std::endl;
 

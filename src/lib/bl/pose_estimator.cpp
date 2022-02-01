@@ -1,10 +1,15 @@
 #include "pose_estimator.hpp"
 
+#include <numeric>
 #include <opencv2/calib3d.hpp>
 
 #include "calibration_provider.hpp"
 #include "optical_flow.hpp"
 #include "pair_storage.hpp"
+
+#include <vision/ninepoint.hpp>
+
+#include <iostream>
 
 namespace rssync {
 class PoseEstimatorImpl : public IPoseEstimator {
@@ -45,15 +50,38 @@ class PoseEstimatorImpl : public IPoseEstimator {
             auto scale =
                 (1 + rs_cooef * (desc.points_b[i].y - desc.points_a[i].y) / calibration.Height());
             points_undistorted_b_scaled[i] =
-                (points_undistorted_b_scaled[i] - desc.points_undistorted_a[i]) * scale +
+                (points_undistorted_b_scaled[i] - desc.points_undistorted_a[i]) / scale +
                 desc.points_undistorted_a[i];
         }
 #endif
-
+#if 0
         auto E =
             cv::findEssentialMat(desc.points_undistorted_a, points_undistorted_b_scaled, 1.,
                                  cv::Point2d(0, 0), cv::RANSAC, .99, 5e-4, desc.mask_essential);
+#endif
+#if 1
+        cv::Mat_<double> E(3, 3, CV_64F);
+        {
+            double k;
+            std::vector<Eigen::Vector3d> points1, points2;
+            for (int i = 0; i < desc.points_undistorted_a.size(); ++i) {
+                Eigen::Vector3d p1, p2;
+                p1 << desc.points_undistorted_a[i].x, desc.points_undistorted_a[i].y, (.75 * desc.points_a[i].y / calibration.Height());
+                p2 << desc.points_undistorted_b[i].x, desc.points_undistorted_b[i].y, 1 + (.75 * desc.points_b[i].y / calibration.Height());
+                points1.push_back(p1);
+                points2.push_back(p2);
+                // std::cout << (.75 * desc.points_a[i].y / calibration.Height()) << std::endl;
+            }
 
+            std::cout << points1.size() << std::endl;
+
+            auto EE = FindEssentialMat(points1, points2, desc.mask_essential, 1e-6, 100, &k);
+
+            std::cout << std::accumulate(desc.mask_essential.begin(), desc.mask_essential.end(), 0) << " " << k << std::endl;
+
+            E << EE(0,0), EE(0,1), EE(0,2), EE(1,0), EE(1,1), EE(1,2), EE(2,0), EE(2,1), EE(2,2);
+        }
+#endif
         if (E.rows != 3 || E.cols != 3) {
             pair_storage_->Update(frame_number, desc);
             return false;
