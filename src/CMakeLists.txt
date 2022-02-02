@@ -12,6 +12,9 @@ find_package(Ceres REQUIRED)
 # gmp
 find_package(gmp REQUIRED)
 
+# OpenMP
+find_package(OpenMP REQUIRED)
+
 # own lib
 add_subdirectory(lib)
 

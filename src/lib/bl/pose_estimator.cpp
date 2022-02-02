@@ -70,14 +70,11 @@ class PoseEstimatorImpl : public IPoseEstimator {
                 p2 << desc.points_undistorted_b[i].x, desc.points_undistorted_b[i].y, 1 + (.75 * desc.points_b[i].y / calibration.Height());
                 points1.push_back(p1);
                 points2.push_back(p2);
-                // std::cout << (.75 * desc.points_a[i].y / calibration.Height()) << std::endl;
             }
 
-            std::cout << points1.size() << std::endl;
+            auto EE = FindEssentialMat(points1, points2, desc.mask_essential, 5e-7, 500, &k);
 
-            auto EE = FindEssentialMat(points1, points2, desc.mask_essential, 1e-6, 100, &k);
-
-            std::cout << std::accumulate(desc.mask_essential.begin(), desc.mask_essential.end(), 0) << " " << k << std::endl;
+            std::cout << points1.size() << " / " << std::accumulate(desc.mask_essential.begin(), desc.mask_essential.end(), 0) << " -> " << k << std::endl;
 
             E << EE(0,0), EE(0,1), EE(0,2), EE(1,0), EE(1,1), EE(1,2), EE(2,0), EE(2,1), EE(2,2);
         }
