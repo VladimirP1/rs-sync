@@ -43,6 +43,11 @@ class PoseEstimatorImpl : public IPoseEstimator {
 
         desc.has_undistorted = true;
 
+#if 1
+        pair_storage_->Update(frame_number, desc);
+
+        return true;
+#endif
         auto points_undistorted_b_scaled = desc.points_undistorted_b;
 #if 0
         constexpr double rs_cooef = .75;
@@ -72,7 +77,7 @@ class PoseEstimatorImpl : public IPoseEstimator {
                 points2.push_back(p2);
             }
 
-            auto EE = FindEssentialMat(points1, points2, desc.mask_essential, 5e-7, 500, &k);
+            auto EE = FindEssentialMat(points1, points2, desc.mask_essential, 5e-7, 5, &k);
 
             std::cout << points1.size() << " / " << std::accumulate(desc.mask_essential.begin(), desc.mask_essential.end(), 0) << " -> " << k << std::endl;
 

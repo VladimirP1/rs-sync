@@ -20,8 +20,8 @@ add_subdirectory(lib)
 
 # AddressSanitizer
 
-# set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
-# set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 
 # ---- Executable targets ----
 
@@ -41,7 +41,7 @@ target_link_libraries(ad libbl)
 # -----
 
 add_executable(ninepoint ninepoint_ransac.cpp)
-target_link_libraries(ninepoint libvision Eigen3::Eigen)
+target_link_libraries(ninepoint Ceres::ceres Eigen3::Eigen)
 
 # -----
 
@@ -52,6 +52,12 @@ target_link_libraries(segtree libmath libio Eigen3::Eigen)
 
 add_executable(t t.cpp)
 target_link_libraries(t libds libbl)
+install(TARGETS t)
+
+# -----
+
+add_executable(export_dataset export_dataset.cpp)
+target_link_libraries(export_dataset libds libbl)
 install(TARGETS t)
 
 # -----
