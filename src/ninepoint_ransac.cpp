@@ -163,10 +163,11 @@ void CalculateWV(const Points& p, const Eigen::MatrixXd& A, const Eigen::MatrixX
         int best_pz = 0;
         for (auto& [u_, v_] : uv) {
             for (auto& rz : zz) {
-                Eigen::Matrix3d wh = sel_u * sel_rz * s_lam * sel_u.transpose();
+                Eigen::Matrix3d wh = u_ * rz * s_lam * u_.transpose();
                 w << wh(2, 1), wh(0, 2), wh(1, 0);
+        std::cout << w.transpose() << std::endl;
 
-                Eigen::Matrix3d vh = sel_v * sel_rz * s_1 * sel_v.transpose();
+                Eigen::Matrix3d vh = v_ * rz * s_1 * v_.transpose();
                 vel << vh(2, 1), vh(0, 2), vh(1, 0);
 
                 int pz = 0;
@@ -176,19 +177,20 @@ void CalculateWV(const Points& p, const Eigen::MatrixXd& A, const Eigen::MatrixX
                     mA << -1, 0, x, 0, -1, y;
                     mB << x * y, -(1 + x * x), y, (1 + y * y), -x * y, -x;
                     auto beta = p.l1(i, 0) * (1 - k) + p.l2(i, 0) * k;
-
                     Eigen::Matrix<double, 2, 1> u;
                     u << p.u_x(i, 0), p.u_y(i, 0);
-                    // std::cout << (mB * w).transpose() << std::endl;
+
+                    Eigen::MatrixXd sgn = (mA * vel).transpose() * (u - mB * w);
+                    // std::cout << sgn.rows() << "x" << sgn.cols();
+                    // std::cout << (mB * w).transpose() << std::endl; 
                     // std::cout << u.transpose() << std::endl;
-                    Eigen::MatrixXd rhs = u - beta * mB * w;
-                    Eigen::MatrixXd lhs = +beta * mA * v;
-                    Eigen::MatrixXd sol =
-                        lhs.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(rhs);
-                    if (sol(0,0) > 0) ++pz;
-                    
+                    // Eigen::MatrixXd rhs = u - beta * mB * w;
+                    // Eigen::MatrixXd lhs = +beta * mA * v;
+                    // Eigen::MatrixXd sol =
+                    //     lhs.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(rhs);
+                    if (sgn(0, 0) >= 0) ++pz;
                 }
-                    std::cout << "pz=" << pz << std::endl;
+                std::cout << "pz=" << pz << std::endl;
 
                 if (pz > best_pz) {
                     best_pz = pz;
@@ -204,7 +206,7 @@ void CalculateWV(const Points& p, const Eigen::MatrixXd& A, const Eigen::MatrixX
         // vel << vh(2, 1), vh(0, 2), vh(1, 0);
 
         Eigen::Matrix3d wh = sel_u * sel_rz * s_lam * sel_u.transpose();
-        std::cout << wh << std::endl;
+        // std::cout << wh << std::endl;
         w << wh(2, 1), wh(0, 2), wh(1, 0);
         vel = v0;
     }
@@ -212,7 +214,26 @@ void CalculateWV(const Points& p, const Eigen::MatrixXd& A, const Eigen::MatrixX
 
 int main() {
     Eigen::Array2Xd p, u, ts;
-    LoadPair("000458AA_tracking_data.txt", 38 * 30, p, u, ts);
+
+    p.resize(2,10);
+    u.resize(2,10);
+    ts.resize(2,10);
+    for (int i = 0; i < 10; ++i) {
+        Eigen::Vector3d point = Eigen::Vector3d::Random();
+        point(2) += 10;
+    // std::cout<< point << std::endl;
+        Eigen::AngleAxis<double> rot(.1, Eigen::Vector3d{0, 0, 1});
+        Eigen::Vector3d point2 = rot * point + Eigen::Vector3d{.1,0,0};
+
+        point /= point(2,0);
+        point2 /= point2(2,0);
+        p.col(i) << point(0,0), point(1,0);
+        u.col(i) << point2(0,0) - point(0,0), point2(1,0) - point(1,0);
+        ts.col(i) << 0,1;
+    }
+
+    // std::cout<< u << std::endl;
+    // LoadPair("000458AA_tracking_data.txt", 38 * 30, p, u, ts);
     // LoadPair("000458AA_tracking_data.txt", 3903, p, u, ts);
 
     Eigen::Array2Xd np(2, 9), nu(2, 9), nts(2, 9);
@@ -238,8 +259,15 @@ int main() {
         Eigen::MatrixXd A, B;
         CalculateABk(pp, A, B, k);
 
-        // k = 0;
+        std::cout << k << std::endl;
 
+        k = 0;
+
+        Eigen::Vector3d w, v;
+        CalculateWV(pp, A, B, k, w, v);
+
+        // k = 0;
+        /*
         Eigen::Vector3d w, v;
         CalculateWV(pp, A, B, k, w, v);
 
@@ -264,7 +292,7 @@ int main() {
 
             std::cout << "\n-------\n";
             std::cout << sol(0,0) << " " << (lhs * sol(0,0) - rhs).norm() * 1700 << std::endl;
-        }
+        }*/
         // std::cout << pp.u_y << std::endl;
     }
     return 0;
