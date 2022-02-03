@@ -1,8 +1,6 @@
 #include <Eigen/Eigen>
 #include <unsupported/Eigen/src/AutoDiff/AutoDiffScalar.h>
 
-#include <ceres/tiny_solver.h>
-
 #include <algorithm>
 #include <array>
 #include <iostream>
@@ -15,101 +13,6 @@ struct Points {
     Eigen::ArrayXd u_x, u_y, u_z;
     Eigen::ArrayXd l1, l2;
     Eigen::ArrayXd betas;
-};
-
-struct DiffReprojectionError {
-    using AdScalar = Eigen::AutoDiffScalar<Eigen::VectorXd>;
-    using AdVector3 = Eigen::Matrix<AdScalar, 3, 1>;
-    using AdMatrixX = Eigen::Matrix<AdScalar, Eigen::Dynamic, Eigen::Dynamic>;
-    using AdArrayX = Eigen::Array<AdScalar, Eigen::Dynamic, Eigen::Dynamic>;
-
-    typedef double Scalar;
-    enum { NUM_RESIDUALS = Eigen::Dynamic, NUM_PARAMETERS = Eigen::Dynamic };
-
-    bool operator()(const double* parameters, double* residuals, double* jacobian) const {
-        AdScalar k;
-        AdVector3 w, v;
-        AdArrayX Z(NumResiduals(), 1);
-        //clang-format off
-        w << AdScalar{parameters[0], NumParameters(), 0},
-            AdScalar{parameters[1], NumParameters(), 1},
-            AdScalar{parameters[2], NumParameters(), 2};
-        v << AdScalar{parameters[3], NumParameters(), 3},
-            AdScalar{parameters[4], NumParameters(), 4},
-            AdScalar{parameters[5], NumParameters(), 5};
-        k = AdScalar{parameters[6], NumParameters(), 6};
-        for (int i = 0; i < NumResiduals(); ++i) {
-            Z(i, 0) = AdScalar{parameters[i + 7], NumParameters(), i + 7};
-        }
-
-        AdArrayX betas = l1 + (l2 - l1) * k;
-        AdArrayX Av(2, p_x.rows()), Bw(2, p_x.rows());
-        Av.row(0) = (p_x * v(2) - v(0)).transpose();
-        Av.row(1) = (p_y * v(2) - v(1)).transpose();
-        Bw.row(0) = (p_x * p_y * w(0) - (1 + p_x * p_x) * w(1) + p_y * w(2)).transpose();
-        Bw.row(1) = ((1 + p_y * p_y) * w(0) - p_x * p_y * w(1) - p_x * w(2)).transpose();
-        Av.row(0) /= Z.transpose();
-        Av.row(1) /= Z.transpose();
-        Av += Bw;
-        Av.row(0) *= betas.transpose();
-        Av.row(1) *= betas.transpose();
-        // std::cout << u_x.transpose() << std::endl;
-        // std::cout << Av << std::endl;
-        // std::cout << u_y.transpose() << std::endl;
-        // std::cout << "---------\n";
-        Av.row(0) -= u_x.transpose();
-        Av.row(1) -= u_y.transpose();
-
-        AdArrayX res = Av.matrix().colwise().norm();
-        // std::cout << res << "\n---" << std::endl;
-
-        if (residuals) {
-            for (int i = 0; i < p_x.rows(); ++i) {
-                residuals[i] = res(0,i).value();
-            }
-        }
-
-        if (jacobian) {
-            Eigen::Map<Eigen::MatrixXd> jac(jacobian, p_x.rows(), p_x.rows() + 7);
-            for (int i = 0; i < p_x.rows(); ++i) {
-                jac.row(i) = res(0,i).derivatives().transpose();
-                jac.row(i).head(7).setZero();
-                // std::cout << jac.row(i) << std::endl;
-            }
-        }
-
-        //clang-format on
-        return true;
-    }
-
-    DiffReprojectionError(const Points& pts) {
-        p_x = pts.x.cast<AdScalar>();
-        p_y = pts.y.cast<AdScalar>();
-        p_z = pts.z.cast<AdScalar>();
-
-        u_x = pts.u_x.cast<AdScalar>();
-        u_y = pts.u_y.cast<AdScalar>();
-        u_z = pts.u_z.cast<AdScalar>();
-
-        l1 = pts.l1.cast<AdScalar>();
-        l2 = pts.l2.cast<AdScalar>();
-    }
-
-    int NumResiduals() const { return p_x.rows(); }
-
-    int NumParameters() const { return p_x.rows() + 7; }
-
-    static void MakeParamBlock(Eigen::Vector3d w, Eigen::Vector3d v, double k, int n,
-                               Eigen::Matrix<double, Eigen::Dynamic, 1>& params) {
-        params.resize(n + 7, 1);
-        params.block(0, 0, 3, 1) = w;
-        params.block(3, 0, 3, 1) = v;
-        params(6, 0) = k;
-        params.block(7, 0, n, 1) = Eigen::ArrayXd::Ones(n, 1) * 1;
-    }
-
-   private:
-    AdArrayX p_x, p_y, p_z, u_x, u_y, u_z, l1, l2;
 };
 
 bool LoadPair(std::string filename, int frame, Eigen::Array2Xd& p, Eigen::Array2Xd& u,
@@ -215,8 +118,8 @@ void CalculateABk(const Points& p, Eigen::MatrixXd& A, Eigen::MatrixXd& B, doubl
     // std::cout << (A * k + B).determinant() << std::endl;
 }
 
-void CalculateWV(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B, double k, Eigen::Vector3d& w,
-                 Eigen::Vector3d& vel) {
+void CalculateWV(const Points& p, const Eigen::MatrixXd& A, const Eigen::MatrixXd& B, double k,
+                 Eigen::Vector3d& w, Eigen::Vector3d& vel) {
     Eigen::MatrixXd C = B + k * A;
 
     Eigen::Vector3d v0;
@@ -255,25 +158,53 @@ void CalculateWV(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B, double k, E
         auto uv = {std::make_pair(u, v), std::make_pair(v, u)};
         auto zz = {r_za, r_zb};
 
-        Eigen::Vector3d best_vel;
+        Eigen::Vector3d best_vel, best_w;
         Eigen::Matrix3d sel_u, sel_v, sel_rz;
-        double best_dot = -std::numeric_limits<double>::infinity();
+        int best_pz = 0;
         for (auto& [u_, v_] : uv) {
             for (auto& rz : zz) {
-                Eigen::Matrix3d vh = v_ * rz * s_1 * v_.transpose();
-                Eigen::Vector3d vel;
+                Eigen::Matrix3d wh = sel_u * sel_rz * s_lam * sel_u.transpose();
+                w << wh(2, 1), wh(0, 2), wh(1, 0);
+
+                Eigen::Matrix3d vh = sel_v * sel_rz * s_1 * sel_v.transpose();
                 vel << vh(2, 1), vh(0, 2), vh(1, 0);
 
-                if (vel.dot(v0) > best_dot) {
-                    best_dot = vel.dot(v0);
+                int pz = 0;
+                for (int i = 0; i < A.rows(); ++i) {
+                    auto x = p.x(i, 0), y = p.y(i, 0);
+                    Eigen::Matrix<double, 2, 3> mA, mB;
+                    mA << -1, 0, x, 0, -1, y;
+                    mB << x * y, -(1 + x * x), y, (1 + y * y), -x * y, -x;
+                    auto beta = p.l1(i, 0) * (1 - k) + p.l2(i, 0) * k;
+
+                    Eigen::Matrix<double, 2, 1> u;
+                    u << p.u_x(i, 0), p.u_y(i, 0);
+                    // std::cout << (mB * w).transpose() << std::endl;
+                    // std::cout << u.transpose() << std::endl;
+                    Eigen::MatrixXd rhs = u - beta * mB * w;
+                    Eigen::MatrixXd lhs = +beta * mA * v;
+                    Eigen::MatrixXd sol =
+                        lhs.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(rhs);
+                    if (sol(0,0) > 0) ++pz;
+                    
+                }
+                    std::cout << "pz=" << pz << std::endl;
+
+                if (pz > best_pz) {
+                    best_pz = pz;
                     sel_u = u_;
                     sel_v = v_;
                     sel_rz = rz;
                     best_vel = vel;
+                    best_w = w;
                 }
             }
         }
+        // Eigen::Matrix3d vh = sel_v * sel_rz * s_1 * sel_v.transpose();
+        // vel << vh(2, 1), vh(0, 2), vh(1, 0);
+
         Eigen::Matrix3d wh = sel_u * sel_rz * s_lam * sel_u.transpose();
+        std::cout << wh << std::endl;
         w << wh(2, 1), wh(0, 2), wh(1, 0);
         vel = v0;
     }
@@ -307,24 +238,33 @@ int main() {
         Eigen::MatrixXd A, B;
         CalculateABk(pp, A, B, k);
 
-        Eigen::Vector3d v, w;
-        CalculateWV(A, B, k, v, w);
+        // k = 0;
 
-        DiffReprojectionError ef(pp);
-        Eigen::Matrix<double, Eigen::Dynamic, 1> params;
-        ef.MakeParamBlock(w, v, k, pp.x.rows(), params);
-        double out[1024];
-        ef(params.data(), out, nullptr);
-        std::cout << out[0] << std::endl;
+        Eigen::Vector3d w, v;
+        CalculateWV(pp, A, B, k, w, v);
 
-        ceres::TinySolver<DiffReprojectionError> solver;
-        solver.options.max_num_iterations = 1000;
-        auto summary = solver.Solve(ef, &params);
+        v = Eigen::Vector3d::Zero();
 
-        std::cout << summary.initial_cost << " -> " << summary.final_cost << " (" << summary.status << ")"<< std::endl;
+        std::cout << w.norm() << " " << v.transpose() << std::endl;
+        for (int i = 0; i < 9; ++i) {
+            auto x = pp.x(i, 0);
+            auto y = pp.y(i, 0);
+            auto beta = pp.l1(i, 0) * (1 - k) + pp.l2(i, 0) * k;
+            Eigen::Matrix<double, 2, 3> mA, mB;
+            mA << -1, 0, x, 0, -1, y;
+            mB << x * y, -(1 + x * x), y, (1 + y * y), -x * y, -x;
+            Eigen::Matrix<double, 2, 1> u;
+            u << pp.u_x(i, 0), pp.u_y(i, 0);
+            // std::cout << (mB * w).transpose() << std::endl;
+            // std::cout << u.transpose() << std::endl;
+            Eigen::MatrixXd rhs = u - beta * mB * w;
+            Eigen::MatrixXd lhs = + beta * mA * v;
+            Eigen::MatrixXd sol = lhs.jacobiSvd(Eigen::ComputeThinU |
+            Eigen::ComputeThinV).solve(rhs);
 
-        std::cout << params.transpose() << std::endl;
-
+            std::cout << "\n-------\n";
+            std::cout << sol(0,0) << " " << (lhs * sol(0,0) - rhs).norm() * 1700 << std::endl;
+        }
         // std::cout << pp.u_y << std::endl;
     }
     return 0;
