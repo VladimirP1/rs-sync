@@ -37,19 +37,22 @@ int main(int args, char** argv) {
     google::InitGoogleLogging(argv[0]);
     auto ctx = IContext::CreateContext();
 
-    RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "193653AA.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
-    RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                "hawkeye_firefly_x_lite_4k_43_v2.json");
+    // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+                                // "hawkeye_firefly_x_lite_4k_43_v2.json");
+        RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+                                "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
     RegisterVisualizer(ctx, kVisualizerName);
     RegisterNormalFitter(ctx, kNormalFitterName);
     RegisterCorrelator(ctx, kCorrelatorName);
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
-    // RegisterGyroLoader(ctx, kGyroLoaderName, "VID_20220205_123905.bb.csv");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "193653AA_FIXED.CSV");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
     RegisterFineGyroCorrelator(ctx, kFineGyroCorrelatorName);
@@ -63,8 +66,11 @@ int main(int args, char** argv) {
     // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
     // int pos = 129;
-    double pos = 38;
-    for (int i = 30 * pos; i < 30 * pos + 120; ++i) {
+    double pos = 85*2;
+    // double pos = 6240./30;
+    // double pos = 5555./30;
+    // double pos = 5900./30;
+    for (int i = 30 * pos; i < 30 * pos + 60*25; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -126,17 +132,17 @@ int main(int args, char** argv) {
     std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 1, 1e-1, -100000, 100000, &rough_correlation_report);
-    int start = 30*pos;
-    // for (int start = 30 * pos; start < 30 * pos + 60 * (4*60)-120; start += 10) {
+    // int start = 30*pos;
+    for (int start = 30 * pos; start < 30 * pos + 60*22; start += 60) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 120, &rep);
 
         auto sync = ctx->GetComponent<IFineGyroCorrelator>(kFineGyroCorrelatorName)
-            ->Run(rep.offset, .03, 4e-4, start, start + 30);
+            ->Run(rep.offset, .02, 5e-4, start, start + 120);
 
         out << start << "," << sync << std::endl;
-    // }
+    }
 
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;

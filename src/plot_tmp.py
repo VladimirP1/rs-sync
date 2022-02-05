@@ -5,12 +5,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 
-import telemetry_parser
-tp = telemetry_parser.Parser('../build/GX019642.MP4')
-t = tp.telemetry()
-exp = []
-for i in range(1,len(t)):
-    exp.extend(t[i]['Exposure']['Data'])
+# import telemetry_parser
+# tp = telemetry_parser.Parser('../build/GX019642.MP4')
+# t = tp.telemetry()
+# exp = []
+# for i in range(1,len(t)):
+#    exp.extend(t[i]['Exposure']['Data'])
 
 csv = pd.read_csv("sync.csv")
 print(csv.values.shape)
@@ -18,7 +18,7 @@ print(csv.values.shape)
 fig, ax1 = plt.subplots()
 ax2 = ax1.twiny()
 
-ax2.plot(exp)
+# ax2.plot(exp)
 ax1.plot(csv.values[:,0], csv.values[:,1], color='red')
 #plt.plot(csv.values[:,0], csv.values[:,3])
 # plt.xlabel("sync point position (seconds)")
