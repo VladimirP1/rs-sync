@@ -14,6 +14,7 @@
 #include <bl/normal_fitter.hpp>
 #include <bl/gyro_loader.hpp>
 #include <bl/rough_gyro_correlator.hpp>
+#include <bl/fine_gyro_correlator.hpp>
 
 #include <ds/lru_cache.hpp>
 
@@ -36,19 +37,24 @@ int main(int args, char** argv) {
     google::InitGoogleLogging(argv[0]);
     auto ctx = IContext::CreateContext();
 
-    RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
+    // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+    //                             "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                "hawkeye_firefly_x_lite_4k_43_v2.json");
+                                "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
     RegisterVisualizer(ctx, kVisualizerName);
     RegisterNormalFitter(ctx, kNormalFitterName);
     RegisterCorrelator(ctx, kCorrelatorName);
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA.bbl.csv");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
+    RegisterFineGyroCorrelator(ctx, kFineGyroCorrelatorName);
     // RegisterComponent<RsReprojector>(ctx, "RsReprojector");
 
     ctx->ContextLoaded();
@@ -56,11 +62,11 @@ int main(int args, char** argv) {
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
-        // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
+    // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
     // int pos = 129;
-    int pos = 38;
-    for (int i = 30 * pos; i < 30 * pos + 60; ++i) {
+    double pos = 480;
+    for (int i = 30 * pos; i < 30 * pos + 500; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -84,7 +90,6 @@ int main(int args, char** argv) {
         // ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
 
         // ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
-
 
         // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);
 
@@ -121,13 +126,19 @@ int main(int args, char** argv) {
 
     RoughCorrelationReport rough_correlation_report;
 
-    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 0.1, 1e-1, -100000, 100000, &rough_correlation_report);
+    for (int start = 30 * pos; start < 30 * pos + 380; start += 10) {
+        std::cout << start << std::endl;
+        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+            ->Run(0, .5, 1e-1, -100000, 100000, &rough_correlation_report);
+        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+            ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 120,
+                  &rough_correlation_report);
 
-    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(rough_correlation_report.offset, .1, 1e-3, -100000, 100000,
-              &rough_correlation_report);
-    std::cout << rough_correlation_report.frames.size() << std::endl;
+        ctx->GetComponent<IFineGyroCorrelator>(kFineGyroCorrelatorName)
+            ->Run(rough_correlation_report.offset, .02, 250e-5, start, start + 30);
+    }
+
+    // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;
 
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {
     //     ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(i);

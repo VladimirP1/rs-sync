@@ -35,16 +35,6 @@ target_link_libraries(ad libbl)
 
 # -----
 
-# add_executable(polynomial polynomial.cpp)
-# target_link_libraries(polynomial libmath gmp::GMPXX gmp::GMP Eigen3::Eigen)
-
-# -----
-
-add_executable(ninepoint ninepoint_ransac.cpp)
-target_link_libraries(ninepoint Ceres::ceres Eigen3::Eigen)
-
-# -----
-
 add_executable(segtree segtree.cpp)
 target_link_libraries(segtree libmath libio Eigen3::Eigen)
 

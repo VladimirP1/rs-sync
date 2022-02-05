@@ -22,14 +22,14 @@ class SegmentTree {
             return;
         }
         data_.resize(2 * data_size);
-        IterativeBuildImpl(begin, end);
+        BuildImpl(begin, end);
     }
 
     typename G::value_type Query(ssize_t l, ssize_t r) const {
         assert(l >= 0 && l < data_.size() / 2);
         assert(r >= 0 && r < data_.size() / 2);
 
-        return IterativeQueryImpl(l, r);
+        return QueryImpl(l, r);
     }
 
     size_t Size() const { return data_.size() / 2; }
@@ -37,10 +37,7 @@ class SegmentTree {
    protected:
     G group_;
 
-   private:
-    std::vector<typename G::value_type> data_;
-
-    typename G::value_type IterativeQueryImpl(size_t l, size_t r) const {
+    typename G::value_type QueryImpl(size_t l, size_t r) const {
         l += data_.size() / 2;
         r += data_.size() / 2;
 
@@ -59,8 +56,11 @@ class SegmentTree {
         return sum;
     }
 
+   private:
+    std::vector<typename G::value_type> data_;
+
     template <typename I>
-    void IterativeBuildImpl(I begin, I end) {
+    void BuildImpl(I begin, I end) {
         const size_t data_size = data_.size() / 2;
         std::copy(begin, end, data_.begin() + data_size);
         for (size_t i = data_size - 1; i >= 1; i--) {

@@ -11,13 +11,13 @@ struct GyroIntegrator {
     typedef Eigen::Matrix<DiffT, 3, 1> RVT;
 
     struct BiasedGyroThunk {
-        const Eigen::Vector3d rot;
-        const Eigen::Vector3d dt1, dt2;
+        Eigen::Vector3d rot;
+        Eigen::Vector3d dt1, dt2;
     };
 
     struct GyroThunk {
-        const RVT rot;
-        const RVT dt1, dt2;
+        RVT rot;
+        RVT dt1, dt2;
 
         BiasedGyroThunk Bias(Eigen::Vector3d bias) const {
             Eigen::Vector3d b_rot, b_dt1, b_dt2;

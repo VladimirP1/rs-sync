@@ -39,7 +39,8 @@ set( LIBBL_SOURCES
     bl/normal_fitter.cpp
     bl/gyro_loader.cpp
     bl/rough_gyro_correlator.cpp
-bl/correlator.cpp
+    bl/fine_gyro_correlator.cpp
+    bl/correlator.cpp
 )
 
 add_library(libbl ${LIBBL_SOURCES})

@@ -9,13 +9,9 @@ target_link_libraries(test_blocking_queue libds Catch2::Catch2)
 add_executable(test_lru_cache ds/lru_cache.cpp)
 target_link_libraries(test_lru_cache libds Catch2::Catch2)
 
-add_executable(test_quaternion math/quaternion.cpp)
-target_link_libraries(test_quaternion libmath Catch2::Catch2)
-
 include(CTest)
 include(Catch)
 
 catch_discover_tests(test_range_interpolated)
 catch_discover_tests(test_blocking_queue)
 catch_discover_tests(test_lru_cache)
-catch_discover_tests(test_quaternion)
