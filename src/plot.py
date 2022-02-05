@@ -13,6 +13,13 @@ plt.figure()
 plt.plot(csv.values[:,0], csv.values[:,1])
 plt.savefig("a.png")
 
+csv = pd.read_csv("fine_cost.csv")
+print(csv.values.shape)
+plt.figure()
+# plt.xlim(-.1,.1)
+plt.plot(csv.values[:,0], csv.values[:,1])
+plt.savefig("cost.png")
+
 csv = pd.read_csv("trace.csv")
 print(csv.values.shape)
 plt.figure()

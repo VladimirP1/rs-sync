@@ -43,7 +43,7 @@ class PoseEstimatorImpl : public IPoseEstimator {
 
         auto E =
             cv::findEssentialMat(desc.points_undistorted_a, desc.points_undistorted_b, 1.,
-                                 cv::Point2d(0, 0), cv::RANSAC, .99, 5e-4, desc.mask_essential);
+                                 cv::Point2d(0, 0), cv::RANSAC, .99, 5e-3, desc.mask_essential);
 
         if (E.rows != 3 || E.cols != 3) {
             pair_storage_->Update(frame_number, desc);

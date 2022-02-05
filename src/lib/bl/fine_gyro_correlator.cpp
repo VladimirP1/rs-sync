@@ -32,13 +32,14 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
         gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
 
         sample_rate_ = gyro_loader_->SampleRate();
-        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 15.);
+        // LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 15.);
 
         integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
     double Run(double initial_offset, double search_radius, double search_step, int start_frame,
                int end_frame) override {
+        std::ofstream out{"fine_cost.csv"};
         double best_ofs{};
         double best_cost = std::numeric_limits<double>::infinity();
         for (double ofs = initial_offset - search_radius; ofs < initial_offset + search_radius;
@@ -48,6 +49,7 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
                 best_cost = cost;
                 best_ofs = ofs;
             }
+            out << ofs << "," << cost << std::endl;
         }
         std::cout << "best_cost = " << best_cost << " best_ofs = " << best_ofs << std::endl;
         return best_ofs;
@@ -55,7 +57,7 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
 
    private:
     double Cost(double offset, int start_frame, int end_frame) {
-        double rs_coeff = .0834167;
+        double rs_coeff = .85;
         auto frame_height = calibration_provider_->GetCalibraiton().Height();
 
         struct PointData {
@@ -126,7 +128,8 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             std::vector<uchar> mask;
 
             cv::Mat E = cv::findEssentialMat(desc.points_undistorted_a, points_br, 1., {0, 0},
-                                             cv::RANSAC, .99, 5e-4, 10, mask);
+                                             cv::RANSAC, .99, 5e-3, 10, mask);
+            // std::cout << std::accumulate(mask.begin(), mask.end(), 0) << " / " << mask.size() << std::endl;
             cv::decomposeEssentialMat(E, R1, R2, t);
             cv::Rodrigues(R1, r1);
             cv::Rodrigues(R2, r2);
@@ -139,11 +142,14 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
                 std::swap(r1, r2);
             }
 
-            bias += Eigen::Vector3d{r1(0, 0), r1(1, 0), r1(2, 0)};
+            bias += integrator_
+                        .IntegrateGyro((desc.timestamp_a * interframe + offset) * sample_rate_,
+                                       (desc.timestamp_b * interframe + offset) * sample_rate_)
+                        .FindBias({0, 0, 0});
             frames += 1;
             total_time += interframe;
         }
-        bias *= 1 / total_time / sample_rate_;
+        bias *= 1 / frames;
         // std::cout << bias.transpose() << std::endl;
 
         double cost = 0;
@@ -151,7 +157,7 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             int i = 0;
             Eigen::MatrixXd problem(frame_data.size(), 3);
             for (auto& pd : frame_data) {
-                if (!pd.inlier) continue;
+                // if (!pd.inlier) continue;
 
                 auto gyrob = pd.gyro.Bias(bias);
 
