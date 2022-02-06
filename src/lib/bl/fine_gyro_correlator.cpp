@@ -127,25 +127,24 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             cv::Mat_<double> R1, R2, r1, r2, t;
             std::vector<uchar> mask;
 
-            cv::Mat E = cv::findEssentialMat(desc.points_undistorted_a, points_br, 1., {0, 0},
-                                             cv::RANSAC, .99, 5e-3, 100, mask);
-            // std::cout << std::accumulate(mask.begin(), mask.end(), 0) << " / " << mask.size() << std::endl;
-            cv::decomposeEssentialMat(E, R1, R2, t);
-            cv::Rodrigues(R1, r1);
-            cv::Rodrigues(R2, r2);
+            // cv::Mat E = cv::findEssentialMat(desc.points_undistorted_a, points_br, 1., {0, 0},
+            //                                  cv::RANSAC, .99, 5e-3, 100, mask);
+            // cv::decomposeEssentialMat(E, R1, R2, t);
+            // cv::Rodrigues(R1, r1);
+            // cv::Rodrigues(R2, r2);
 
-            for (int i = 0; i < frames_data.back().size(); ++i)
-                frames_data.back()[i].inlier = mask[i];
+            // for (int i = 0; i < frames_data.back().size(); ++i)
+            //     frames_data.back()[i].inlier = mask[i];
 
-            if (cv::norm(r1) > cv::norm(r2)) {
-                std::swap(R1, R2);
-                std::swap(r1, r2);
-            }
+            // if (cv::norm(r1) > cv::norm(r2)) {
+            //     std::swap(R1, R2);
+            //     std::swap(r1, r2);
+            // }
 
-            bias += integrator_
-                        .IntegrateGyro((desc.timestamp_a * interframe + offset) * sample_rate_,
-                                       (desc.timestamp_b * interframe + offset) * sample_rate_)
-                        .FindBias({0, 0, 0});
+            // bias += integrator_
+            //             .IntegrateGyro((desc.timestamp_a * interframe + offset) * sample_rate_,
+            //                            (desc.timestamp_b * interframe + offset) * sample_rate_)
+            //             .FindBias({0, 0, 0});
             frames += 1;
             total_time += interframe;
         }

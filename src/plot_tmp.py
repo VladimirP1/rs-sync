@@ -5,22 +5,25 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 
-# import telemetry_parser
-# tp = telemetry_parser.Parser('../build/GX019642.MP4')
-# t = tp.telemetry()
-# exp = []
-# for i in range(1,len(t)):
-#    exp.extend(t[i]['Exposure']['Data'])
+# exp = pd.read_csv('GX019642_Hero6 Black-SHUT.csv')
+
+#print(exp.values[:,2])
+# left = np.searchsorted(exp.values[:,0], (5100+60)/50*1000)
+# right = np.searchsorted(exp.values[:,0], 8580/50*1000)
+
+# print(left,right)
 
 csv = pd.read_csv("sync.csv")
 print(csv.values.shape)
 
 fig, ax1 = plt.subplots()
-ax2 = ax1.twiny()
-
+ax2 = ax1.twiny().twinx()
+ax1.set_ylim(-.035,-.025)
+ax2.set_ylim(.009,.004)
+#plt.ylim(-.035,-.025)
 # ax2.plot(exp)
 ax1.plot(csv.values[:,0], csv.values[:,1], color='red')
-#plt.plot(csv.values[:,0], csv.values[:,3])
+# ax2.plot(exp.values[left:right,0], exp.values[left:right,2])
 # plt.xlabel("sync point position (seconds)")
 # plt.ylabel("estimated gyro shift (seconds)")
 plt.savefig("a.png")

@@ -70,7 +70,7 @@ int main(int args, char** argv) {
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 60*25; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 60*60; ++i) {
         std::cout << i << std::endl;
         // cv::Mat out;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
@@ -133,7 +133,7 @@ int main(int args, char** argv) {
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 1, 1e-1, -100000, 100000, &rough_correlation_report);
     // int start = 30*pos;
-    for (int start = 30 * pos; start < 30 * pos + 60*22; start += 60) {
+    for (int start = 30 * pos; start < 30 * pos + 60*58; start += 60) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 120, &rep);
