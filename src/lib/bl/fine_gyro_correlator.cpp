@@ -57,9 +57,9 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
 
    private:
     double Cost(double offset, Eigen::Vector3d bias, int start_frame, int end_frame) {
-        double rs_coeff = .75;
-
+        double rs_coeff = calibration_provider_->GetRsCoefficent();
         auto frame_height = calibration_provider_->GetCalibraiton().Height();
+
         std::vector<int> frame_idxs;
         pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
 
@@ -108,8 +108,8 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             // Reweigh the rows based on error
             auto error = (problem * t).eval();
             // std::cout << error << "\n";
-            // error = 1. / (1. + exp(1e4 * error.array().abs()));
-            error = 1. / (1. + 1e4 * error.array().abs());
+            error = 1. / (1. + exp(1e4 * error.array().abs()));
+            // error = 1. / (1. + 1e4 * error.array().abs());
             problem.array().colwise() *= error.array();
 
             // Solve again
@@ -117,7 +117,6 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             t = svd.matrixV().col(svd.matrixV().cols() - 1).normalized();
             
             cost += (problem * t).norm();
-
         }
         return cost;
     }

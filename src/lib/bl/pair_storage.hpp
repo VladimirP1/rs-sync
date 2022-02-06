@@ -20,8 +20,6 @@ struct PairDescription {
     std::vector<uchar> mask_essential, mask_4d, mask_correlation;
     cv::Mat_<double> R, t, points4d;
 
-    double corr_valid_radius{};
-    std::vector<NormalModel> correlation_models;
     std::vector<std::pair<cv::Mat, cv::Mat>> patch_transforms;
 
     std::vector<cv::Mat> debug_correlations;

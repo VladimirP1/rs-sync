@@ -37,22 +37,22 @@ int main(int args, char** argv) {
     google::InitGoogleLogging(argv[0]);
     auto ctx = IContext::CreateContext();
 
-    RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "193653AA.MP4");
-    // RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
+    // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+                                // "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                "hawkeye_firefly_x_lite_4k_43_v2.json");
-        // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                // "GoPro_Hero6_2160p_16by9_wide.json");
+    "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
     RegisterVisualizer(ctx, kVisualizerName);
     RegisterNormalFitter(ctx, kNormalFitterName);
     RegisterCorrelator(ctx, kCorrelatorName);
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
-    // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "193653AA_FIXED.CSV");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
     RegisterFineGyroCorrelator(ctx, kFineGyroCorrelatorName);
@@ -60,36 +60,31 @@ int main(int args, char** argv) {
 
     ctx->ContextLoaded();
 
+    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(.5);
+
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
-        ->SetPatchSizes(cv::Size(40, 40), cv::Size(20, 20));
+        ->SetPatchSizes(cv::Size(20, 20), cv::Size(10, 10));
     // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
     // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
-    int pos = 45;
-    // double pos = 85*2;
+    // int pos = 45;
+    // int pos = 129;
+    // int pos = 38;
+    double pos = 85*2;
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
     for (int i = 30 * pos; i < 30 * pos + 120; ++i) {
         std::cout << i << std::endl;
-        // cv::Mat out;
-        // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i, out);
-        // std::cout << out.cols << std::endl;
-        // OpticalFlowLK::KeypointInfo info;
-        // ctx->GetComponent<OpticalFlowLK>("OpticalFlowLK")->GetKeypoints(i, info);
-        // ctx->GetComponent<IOpticalFlow>(kOpticalFlowName)->CalcOptflow(i);
+
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
 
         // PairDescription desc;
         // ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        // std::cout << desc.has_points << " " << desc.points_a.size() << " " <<
-        // desc.t.at<double>(2) << std::endl;
-        PairDescription desc;
-        ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        desc.enable_debug = true;
-        ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
+        // desc.enable_debug = true;
+        // ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
-        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
+        ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
 
         // ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
 
@@ -111,18 +106,6 @@ int main(int args, char** argv) {
         // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatched(img, i, false);
         // ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, i);
         // cv::imwrite("out" + std::to_string(i) + ".jpg", img);
-
-        // PairDescription desc;
-        // ctx->GetComponent<IPairStorage>(kPairStorageName)->Get(i, desc);
-        // double sum_corr = 0;
-        // double count_corr = 0;
-        // for (int i = 0; i < desc.correlation_models.size(); ++i) {
-        //     if (desc.mask_correlation[i]) {
-        //         sum_corr += desc.correlation_models[i].Evaluate(0, 0);
-        //         count_corr += 1;
-        //     }
-        // }
-        // std::cout << i << " " << sum_corr / count_corr << std::endl;
     }
     // ctx->GetComponent<ICorrelator>(kCorrelatorName)->Calculate(38*30+5);
     // ctx->GetComponent<IVisualizer>(kVisualizerName)
@@ -132,18 +115,17 @@ int main(int args, char** argv) {
     std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 1, 1e-1, -100000, 100000, &rough_correlation_report);
-    int start = 30*pos;
+    int start = 30 * pos;
     // for (int start = 30 * pos; start < 30 * pos + 60*58; start += 60) {
-        std::cout << start << std::endl;
-        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-            ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 120, &rep);
+    std::cout << start << std::endl;
+    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+        ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 120, &rep);
 
-        auto sync = ctx->GetComponent<IFineGyroCorrelator>(kFineGyroCorrelatorName)
-            ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
+    auto sync = ctx->GetComponent<IFineGyroCorrelator>(kFineGyroCorrelatorName)
+                    ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
 
-        out << start << "," << sync << std::endl;
+    out << start << "," << sync << std::endl;
     // }
-
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {

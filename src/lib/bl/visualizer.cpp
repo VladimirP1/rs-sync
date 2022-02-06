@@ -73,12 +73,12 @@ class VisualizerImpl : public IVisualizer {
 
     bool VisualizeCorrelations(cv::Mat& out, int frame_number, double target_aspect) override {
         PairDescription desc;
-        if (!pair_storage_->Get(frame_number, desc) || !desc.has_correlations) {
+        if (!pair_storage_->Get(frame_number, desc) || !desc.enable_debug) {
             return false;
         }
 
         int target_w{}, target_h{};
-        for (int i = 0; i < desc.correlation_models.size(); ++i) {
+        for (int i = 0; i < desc.debug_correlations.size(); ++i) {
             if (desc.mask_correlation[i]) {
                 if (desc.debug_correlations.size()) {
                     cv::Mat grad_col;
@@ -95,9 +95,6 @@ class VisualizerImpl : public IVisualizer {
                         std::max(corr_size.width, std::max(patch_size_a.width, patch_size_b.width));
                     target_h = std::max(corr_size.height,
                                         std::max(patch_size_a.height, patch_size_b.height));
-                } else {
-                    int model_size = desc.corr_valid_radius * 2 * 6;
-                    target_w = target_h = model_size;
                 }
                 break;
             }
@@ -137,10 +134,6 @@ class VisualizerImpl : public IVisualizer {
                 cv::Mat grad_col, tmp;
                 double tx, ty;
 
-                NormalModel model = desc.correlation_models[k];
-                model.ShiftOrigin(desc.corr_valid_radius, desc.corr_valid_radius);
-                model.GetCenter(tx, ty);
-
                 if (!desc.debug_patches.empty()) {
                     cv::Mat_<double> affine(2, 3, CV_64F);
                     cv::Size src_size = desc.debug_patches[k].first.size();
@@ -154,17 +147,15 @@ class VisualizerImpl : public IVisualizer {
                     cv::warpAffine(desc.debug_patches[k].second, out(b_roi), affine, b_roi.size());
 
                     CorrelationToColor(desc.debug_correlations[k], grad_col, cv::COLORMAP_MAGMA);
-                    cv::circle(grad_col, cv::Point((tx + .5) * 6, (ty + .5) * 6), 1,
-                               cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+
+                    cv::Mat_<double> v(3, 1, CV_64F);
+                    v << desc.points_b[k].x, desc.points_b[k].y, 1;
+                    v = desc.patch_transforms[k].first * v;
+                    v*=10;
+                    cv::line(grad_col, cv::Point(grad_col.cols / 2, grad_col.rows / 2),
+                             cv::Point(grad_col.cols / 2. + v(0, 0), grad_col.rows / 2. + v(1, 0)), cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
                     cv::resize(grad_col, out(corr_roi), corr_roi.size());
                 }
-
-                ComputeNormalImage(
-                    tmp, model, cv::Size(desc.corr_valid_radius * 2, desc.corr_valid_radius * 2));
-                CorrelationToColor(tmp, grad_col, cv::COLORMAP_MAGMA);
-                cv::circle(grad_col, cv::Point((tx + .5) * 6, (ty + .5) * 6), 1,
-                           cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
-                cv::resize(grad_col, out(corr_model_roi), corr_model_roi.size());
 
                 ++k;
             }

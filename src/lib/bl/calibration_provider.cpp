@@ -19,6 +19,10 @@ class CalibrationProviderImpl : public ICalibrationProvider {
 
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {}
 
+    virtual void SetRsCoefficent(double k) override { rs_coeff_ = k; }
+
+    double GetRsCoefficent() const override { return rs_coeff_; }
+
     FisheyeCalibration GetCalibraiton() override { return calibration_; }
 
     cv::Mat GetReasonableProjection() override { return GetProjectionForUndistort(calibration_); }
@@ -28,6 +32,7 @@ class CalibrationProviderImpl : public ICalibrationProvider {
     }
 
    private:
+    double rs_coeff_{};
     FisheyeCalibration calibration_;
     std::mutex mtx_;
 };

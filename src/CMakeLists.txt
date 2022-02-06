@@ -46,6 +46,12 @@ install(TARGETS t)
 
 # -----
 
+add_executable(sync_many_points sync_many_points.cpp)
+target_link_libraries(sync_many_points libds libbl)
+install(TARGETS sync_many_points)
+
+# -----
+
 add_executable(export_dataset export_dataset.cpp)
 target_link_libraries(export_dataset libds libbl)
 install(TARGETS t)
