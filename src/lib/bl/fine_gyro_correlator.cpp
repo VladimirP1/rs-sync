@@ -108,8 +108,8 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
             // Reweigh the rows based on error
             auto error = (problem * t).eval();
             // std::cout << error << "\n";
-            error = 1. / (1. + exp(1e4 * error.array().abs()));
-            // error = 1. / (1. + 1e4 * error.array().abs());
+            // error = 1. / (1. + exp(1e4 * error.array().abs()));
+            error = 1. / (1. + 1e4 * error.array().abs());
             problem.array().colwise() *= error.array();
 
             // Solve again
