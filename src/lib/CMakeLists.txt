@@ -41,6 +41,7 @@ set( LIBBL_SOURCES
     bl/rough_gyro_correlator.cpp
     bl/fine_gyro_correlator.cpp
     bl/correlator.cpp
+    bl/fine_sync.cpp
 )
 
 add_library(libbl ${LIBBL_SOURCES})
