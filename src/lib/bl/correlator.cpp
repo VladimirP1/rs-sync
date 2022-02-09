@@ -129,6 +129,12 @@ class CorrelatorImpl : public ICorrelator {
             new_observed_b.row(0) /= new_observed_b.row(2);
             new_observed_b.row(1) /= new_observed_b.row(2);
 
+            // Maximum is at the edge
+            if (std::isnan(new_observed_b(0, 0)) || std::isnan(new_observed_b(1, 0))) {
+                desc.mask_correlation[i] = false;
+                continue;
+            }
+
             // Update distorted points
             desc.points_a[i] = dist_a;
             desc.points_b[i] = cv::Point2d{new_observed_b(0, 0), new_observed_b(1, 0)};

@@ -199,7 +199,9 @@ void SubpixelMax(const cv::Mat& data_f, double& cx, double& cy) {
             dx += tdx * p[2];
             dy += tdy * p[2];
         }
-        double ss = log(1 + iters - i) / sqrt(dx * dx + dy * dy);
+
+        double der_squared = std::max(dx * dx + dy * dy, 1e-20);
+        double ss = log(1 + iters - i) / sqrt(der_squared);
         // std::cout << sum << " " << dx << " " << dy << " " << cx << " " << cy << std::endl;
         // std::cout << log(1 + iters - i) * alpha << std::endl;
         cx += alpha * dx * ss;
