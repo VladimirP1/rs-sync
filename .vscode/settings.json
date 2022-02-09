@@ -2,5 +2,4 @@
     "cmake.configureOnOpen": true,
     "cmake.sourceDirectory": "${workspaceFolder}",
     "clangd.arguments": ["-header-insertion=never"],
-    "cmake.generator": "Unix Makefiles"
 }

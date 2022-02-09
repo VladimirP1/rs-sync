@@ -25,7 +25,7 @@ class SegmentTree {
         BuildImpl(begin, end);
     }
 
-    typename G::value_type Query(ssize_t l, ssize_t r) const {
+    typename G::value_type Query(ptrdiff_t l, ptrdiff_t r) const {
         assert(l >= 0 && l < data_.size() / 2);
         assert(r >= 0 && r < data_.size() / 2);
 

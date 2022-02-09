@@ -16,7 +16,6 @@ set( CONAN_REQUIREMENTS
     ceres-solver/2.0.0
     nlohmann_json/3.10.5
     catch2/2.13.8
-    gmp/6.2.1
 )
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
@@ -24,7 +23,7 @@ list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 
 conan_cmake_configure(REQUIRES ${CONAN_REQUIREMENTS}
                       GENERATORS cmake_find_package_multi
-                      OPTIONS opencv:with_ffmpeg=True
+                      OPTIONS opencv:with_ffmpeg=True ffmpeg:with_libvpx=False
                       SETTINGS build_type=Release
                     )
 
@@ -36,6 +35,11 @@ foreach(TYPE ${CMAKE_CONFIGURATION_TYPES})
                         REMOTE conancenter
                         SETTINGS ${settings})
 endforeach()
+
+if (MSVC)
+    add_compile_options(/bigobj)
+    add_definitions(-D_USE_MATH_DEFINES)
+endif()
 
 add_library(rtl INTERFACE)
 target_include_directories(rtl INTERFACE thirdparty/rtl)

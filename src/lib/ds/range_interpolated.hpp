@@ -33,12 +33,12 @@ class Interpolated : public Base {
 
         if (disc_l < disc_r) {
             size_t disc_rim =
-                std::min(std::max(static_cast<ssize_t>(disc_r - 1),
-                                  static_cast<ssize_t>(0)),
-                         static_cast<ssize_t>(data_size_) - 1);
+                std::min(std::max(static_cast<ptrdiff_t>(disc_r - 1),
+                                  static_cast<ptrdiff_t>(0)),
+                         static_cast<ptrdiff_t>(data_size_) - 1);
             size_t disc_lim = std::min(
-                std::max(static_cast<ssize_t>(disc_l), static_cast<ssize_t>(0)),
-                static_cast<ssize_t>(data_size_) - 1);
+                std::max(static_cast<ptrdiff_t>(disc_l), static_cast<ptrdiff_t>(0)),
+                static_cast<ptrdiff_t>(data_size_) - 1);
 
             ret = Base::QueryImpl(disc_lim, disc_rim);
         }
@@ -64,7 +64,7 @@ class Interpolated : public Base {
         }
 
         double k = std::fabs(r - l);
-        ssize_t idx = std::floor(base);
+        ptrdiff_t idx = std::floor(base);
 
         assert(idx >= 0 && idx < data_size_);
         assert(k >= 0 && k <= 1);

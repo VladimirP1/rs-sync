@@ -21,7 +21,7 @@ class PrefixSums {
         BuildImpl();
     }
 
-    typename G::value_type Query(ssize_t l, ssize_t r) const {
+    typename G::value_type Query(ptrdiff_t l, ptrdiff_t r) const {
         assert(l >= 0 && l < data_.size());
         assert(r >= 0 && r < data_.size());
 
