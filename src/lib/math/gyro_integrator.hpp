@@ -7,7 +7,7 @@
 
 struct GyroIntegrator {
     typedef Eigen::AutoDiffScalar<Eigen::Vector3d> DiffT;
-    typedef Eigen::AngleAxis<DiffT> RotT;
+    typedef Eigen::Quaternion<DiffT> RotT;
     typedef Eigen::Matrix<DiffT, 3, 1> RVT;
 
     struct BiasedGyroThunk {
@@ -63,7 +63,7 @@ struct GyroIntegrator {
             RVT rv;
             rv << DiffT{samples[i][0], 3, 0}, DiffT{samples[i][1], 3, 1},
                 DiffT{samples[i][2], 3, 2};
-            v.push_back({rv.norm(), rv.normalized()});
+            v.push_back(AngleAxisToQuaternion(rv));
         }
         segment_tree_ = {v.begin(), v.end()};
     }
@@ -76,28 +76,26 @@ struct GyroIntegrator {
         const int n2 = std::floor(t2);
         RVT sum1, sum2, dsum1, dsum2;
         {
-            const auto p0 = segment_tree_.Query(n1 - 1, n1 - 1);
-            const auto p1 = segment_tree_.Query(n1 - 1, n1 + 0);
-            const auto p2 = segment_tree_.Query(n1 - 1, n1 + 1);
-            const auto p3 = segment_tree_.Query(n1 - 1, n1 + 2);
-            CubicHermiteSpline<3, DiffT>(p0.angle() * p0.axis(), p1.angle() * p1.axis(),
-                                         p2.angle() * p2.axis(), p3.angle() * p3.axis(),
-                                         t1 - static_cast<double>(n1), sum1.data(), dsum1.data());
+            const auto p0 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n1 - 1));
+            const auto p1 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n1 + 0));
+            const auto p2 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n1 + 1));
+            const auto p3 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n1 + 2));
+            CubicHermiteSpline<3, DiffT>(p0, p1, p2, p3, t1 - static_cast<double>(n1), sum1.data(),
+                                         dsum1.data());
         }
         {
-            const auto p0 = segment_tree_.Query(n1 - 1, n2 - 1);
-            const auto p1 = segment_tree_.Query(n1 - 1, n2 + 0);
-            const auto p2 = segment_tree_.Query(n1 - 1, n2 + 1);
-            const auto p3 = segment_tree_.Query(n1 - 1, n2 + 2);
-            CubicHermiteSpline<3, DiffT>(p0.angle() * p0.axis(), p1.angle() * p1.axis(),
-                                         p2.angle() * p2.axis(), p3.angle() * p3.axis(),
-                                         t2 - static_cast<double>(n2), sum2.data(), dsum2.data());
+            const auto p0 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n2 - 1));
+            const auto p1 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n2 + 0));
+            const auto p2 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n2 + 1));
+            const auto p3 = QuaternionToAngleAxis(segment_tree_.Query(n1 - 1, n2 + 2));
+            CubicHermiteSpline<3, DiffT>(p0, p1, p2, p3, t2 - static_cast<double>(n2), sum2.data(),
+                                         dsum2.data());
         }
-        const RotT sum1aa{sum1.norm(), sum1.normalized()};
-        const RotT sum2aa{sum2.norm(), sum2.normalized()};
+        const RotT sum1aa = AngleAxisToQuaternion(sum1);
+        const RotT sum2aa = AngleAxisToQuaternion(sum2);
         auto sumaa = RotT{sum1aa.inverse() * sum2aa};
 
-        return GyroThunk{sumaa.axis() * sumaa.angle(), dsum1, dsum2};
+        return GyroThunk{QuaternionToAngleAxis(sumaa), dsum1, dsum2};
     }
 
    private:
@@ -127,21 +125,99 @@ struct GyroIntegrator {
         }
     }
 
-    struct AngleAxisGroup {
+    /* The following two functions are adopted from the Ceres solver */
+    static inline Eigen::Matrix<DiffT, 3, 1> QuaternionToAngleAxis(
+        const Eigen::Quaternion<DiffT> quaternion) {
+        Eigen::Matrix<DiffT, 3, 1> angle_axis;
+        const DiffT& q1 = quaternion.x();
+        const DiffT& q2 = quaternion.y();
+        const DiffT& q3 = quaternion.z();
+        const DiffT sin_squared_theta = q1 * q1 + q2 * q2 + q3 * q3;
+
+        // For quaternions representing non-zero rotation, the conversion
+        // is numerically stable.
+        if (sin_squared_theta > DiffT(0.0)) {
+            const DiffT sin_theta = sqrt(sin_squared_theta);
+            const DiffT& cos_theta = quaternion.w();
+
+            // If cos_theta is negative, theta is greater than pi/2, which
+            // means that angle for the angle_axis vector which is 2 * theta
+            // would be greater than pi.
+            //
+            // While this will result in the correct rotation, it does not
+            // result in a normalized angle-axis vector.
+            //
+            // In that case we observe that 2 * theta ~ 2 * theta - 2 * pi,
+            // which is equivalent saying
+            //
+            //   theta - pi = atan(sin(theta - pi), cos(theta - pi))
+            //              = atan(-sin(theta), -cos(theta))
+            //
+            const DiffT two_theta = DiffT(2.0) * ((cos_theta < DiffT(0.0)) ? atan2(-sin_theta, -cos_theta)
+                                                                   : atan2(sin_theta, cos_theta));
+            const DiffT k = two_theta / sin_theta;
+            angle_axis.x() = q1 * k;
+            angle_axis.y() = q2 * k;
+            angle_axis.z() = q3 * k;
+        } else {
+            // For zero rotation, sqrt() will produce NaN in the derivative since
+            // the argument is zero.  By approximating with a Taylor series,
+            // and truncating at one term, the value and first derivatives will be
+            // computed correctly when Jets are used.
+            const DiffT k(2.0);
+            angle_axis.x() = q1 * k;
+            angle_axis.y() = q2 * k;
+            angle_axis.z() = q3 * k;
+        }
+        return angle_axis;
+    }
+
+    static inline Eigen::Quaternion<DiffT> AngleAxisToQuaternion(
+        const Eigen::Matrix<DiffT, 3, 1> angle_axis) {
+        Eigen::Quaternion<DiffT> quaternion;
+        const DiffT& a0 = angle_axis.x();
+        const DiffT& a1 = angle_axis.y();
+        const DiffT& a2 = angle_axis.z();
+        const DiffT theta_squared = a0 * a0 + a1 * a1 + a2 * a2;
+
+        // For points not at the origin, the full conversion is numerically stable.
+        if (theta_squared > DiffT(0.0)) {
+            const DiffT theta = sqrt(theta_squared);
+            const DiffT half_theta = theta * DiffT(0.5);
+            const DiffT k = sin(half_theta) / theta;
+            quaternion.w() = cos(half_theta);
+            quaternion.x() = a0 * k;
+            quaternion.y() = a1 * k;
+            quaternion.z() = a2 * k;
+        } else {
+            // At the origin, sqrt() will produce NaN in the derivative since
+            // the argument is zero.  By approximating with a Taylor series,
+            // and truncating at one term, the value and first derivatives will be
+            // computed correctly when Jets are used.
+            const DiffT k(0.5);
+            quaternion.w() = DiffT(1.0);
+            quaternion.x() = a0 * k;
+            quaternion.y() = a1 * k;
+            quaternion.z() = a2 * k;
+        }
+        return quaternion;
+    }
+
+    struct QuaternionGroup {
         typedef Eigen::AutoDiffScalar<Eigen::Vector3d> scalar_type;
-        typedef Eigen::AngleAxis<scalar_type> value_type;
+        typedef Eigen::Quaternion<scalar_type> value_type;
         value_type unit() const { return value_type::Identity(); }
 
-        value_type add(const value_type& a, const value_type& b) const { return value_type{a * b}; }
+        value_type add(const value_type& a, const value_type& b) const { return a * b; }
 
         value_type mult(const value_type& a, double k) const {
-            return value_type{a.angle() * k, a.axis()};
+            return AngleAxisToQuaternion(QuaternionToAngleAxis(a) * k);
         }
 
-        value_type inv(const value_type& a) const { return value_type{-a.angle(), a.axis()}; }
+        value_type inv(const value_type& a) const { return mult(a, -1.); }
     };
 
-    SegmentTree<AngleAxisGroup> segment_tree_;
+    SegmentTree<QuaternionGroup> segment_tree_;
 };
 
 inline void LowpassGyro(Eigen::Vector3d* samples, int length, int divider) {
