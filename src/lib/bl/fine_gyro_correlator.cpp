@@ -32,7 +32,7 @@ class FineGyroCorrelatorImpl : public IFineGyroCorrelator {
         gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
 
         sample_rate_ = gyro_loader_->SampleRate();
-        // LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 250.);
+        // LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 500.);
 
         integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }

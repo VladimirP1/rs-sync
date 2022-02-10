@@ -32,20 +32,29 @@ class FineSyncImpl : public IFineSync {
         gyro_loader_->GetData(gyro_data.data(), gyro_data.size());
 
         sample_rate_ = gyro_loader_->SampleRate();
-        // LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 250.);
-
         integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
+        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 100.);
+        integrator_lpf_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
     double Run(double initial_offset, Eigen::Vector3d bias, double search_radius,
                double search_step, int start_frame, int end_frame) override {
         std::ofstream out{"fine_cost0.csv"};
 
-        Eigen::Vector3d g_bias;
+        static constexpr int hist_len = 20;
+        double ofs_hist[hist_len];
+        int hist_pos = 0;
+
+        int cosec_bias_upds = 0;
+
+        Eigen::Vector3d m_bias, v_bias, g_bias;
+        v_bias.setZero();
+        m_bias.setZero();
         double ou = 1;
         double ofs = initial_offset, cost{};
         double m{}, v{.01}, g{};
-        double b1{.85}, b2{.9}, eps{1e-8}, eta{.002};
+        double b1{.85}, b2{.9}, eps{1e-8}, eta{5e-4};
+        double b1_bias{.85}, b2_bias{.9}, eta_bias{1e-5};
         for (int i = 0; i < 500; ++i) {
             cost = Cost(ofs, bias, start_frame, end_frame, ou, g, g_bias);
             m = b1 * m + (1 - b1) * g;
@@ -53,16 +62,33 @@ class FineSyncImpl : public IFineSync {
             double m_ = m / (1 - b1);
             double v_ = v / (1 - b2);
             ofs = ofs - eta / (sqrt(v_) + eps) * m_;
-            if (ou <= .8 && v_ < .001 && g_bias.norm() > 30) {
-                bias = bias - g_bias * 1e-8;
+
+            m_bias = b1_bias * m_bias + (1 - b1_bias) * g_bias;
+            v_bias = b1_bias * v_bias + (1 - b1_bias) * (g_bias.array() * g_bias.array()).matrix();
+            Eigen::Vector3d m__bias = m_bias / (1 - b1_bias);
+            Eigen::Vector3d v__bias = v_bias / (1 - b2_bias);
+
+            if (v_ < .001) {
+                bias = bias - (eta_bias / (sqrt(v__bias.array()) + eps) * m__bias.array()).matrix();
+                std::cout << "update " << v__bias.norm() << std::endl;
+                ++ cosec_bias_upds;
+            } else {
+                cosec_bias_upds = 0;
             }
-            if (ou > .8 && v_ < .0001) {
-                ou -= .002;
+
+            // Termination
+            ofs_hist[hist_pos] = ofs;
+            auto [min_ofs_hist, max_ofs_hist] = std::minmax_element(ofs_hist, ofs_hist + hist_len);
+            if (cosec_bias_upds > 30 && i > hist_len && *max_ofs_hist - *min_ofs_hist < 5e-4) {
+                std::cout << "Converged in " << i << " iterations" << std::endl;
+                break;
             }
+            hist_pos = (hist_pos + 1) % hist_len;
 
             std::cout << "g=" << g << " v_=" << v_ << " ofs=" << ofs << " g_bias=" << g_bias(0, 0)
                       << " " << g_bias(1, 0) << " " << g_bias(2, 0) << std::endl;
-            out << i << "," << g << "," << ofs << "," << v_ << "," << m_ << "," << bias.norm() << "," << cost << std::endl;
+            out << i << "," << g << "," << ofs << "," << v_ << "," << m_ << "," << bias.norm()
+                << "," << cost << std::endl;
         }
 
         return ofs;
@@ -125,12 +151,25 @@ class FineSyncImpl : public IFineSync {
         PairDescription desc;
         pair_storage_->Get(frame, desc);
 
+        int j = 0;
+        for (int i = 0; i < desc.point_ids.size(); ++i) {
+            if (!desc.mask_essential[i]) {
+                continue;
+            }
+            ++j;
+        }
+
         using ScalarT = Eigen::AutoDiffScalar<Eigen::Matrix<double, 4, 1>>;
-        Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> problem(desc.point_ids.size(), 3);
+        Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> problem(j, 3);
+        j = 0;
         double interframe = desc.timestamp_b - desc.timestamp_a;
         for (int i = 0; i < desc.point_ids.size(); ++i) {
             double ts_a = rs_coeff * desc.points_a[i].y / frame_height,
                    ts_b = rs_coeff * desc.points_b[i].y / frame_height;
+
+            if (!desc.mask_essential[i]) {
+                continue;
+            }
 
             auto gyro = integrator_.IntegrateGyro(
                 (desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
@@ -150,44 +189,23 @@ class FineSyncImpl : public IFineSync {
             rot_wdt(1, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(1, 0).derivatives();
             rot_wdt(2, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(2, 0).derivatives();
 
-            Eigen::Matrix<ScalarT, 3, 3> R = AngleAxisToRotationMatrix(rot_wdt);
+            Eigen::Matrix<ScalarT, 3, 3> R = AngleAxisToRotationMatrix((-rot_wdt).eval());
+            // Eigen::Matrix<ScalarT, 3, 3> R =
+            // Eigen::AngleAxis<ScalarT>(-rot_wdt.norm(), rot_wdt.normalized())
+            // .toRotationMatrix();
             Eigen::Matrix<ScalarT, 3, 1> point_br = R * point_b;
             point_br /= point_br(2, 0);
             point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
 
-            problem.row(i) = point_br.normalized().cross(point_a.cast<ScalarT>().normalized());
+            problem.row(j++) = point_br.normalized().cross(point_a.cast<ScalarT>().normalized());
         }
 
         auto svd = problem.jacobiSvd(Eigen::ComputeFullV);
         auto t = svd.matrixV().col(svd.matrixV().cols() - 1).normalized().eval();
 
-        // Reweigh the rows based on error
         auto error = (problem * t).eval();
 
-        std::vector<std::pair<ScalarT, int>> ps;
-        for (int i = 0; i < error.rows(); ++i) {
-            ps.push_back({error(i, 0), i});
-        }
-        std::sort(ps.begin(), ps.end());
-
-        double k = ou;
-        int points_left = static_cast<int>(desc.point_ids.size() * k);
-
-        if (points_left < 3) {
-            der = 0;
-            return 0.;
-        }
-
-        Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> problem2(points_left, 3);
-        for (int i = 0; i < problem2.rows(); ++i) {
-            problem2.row(i) = problem.row(ps[i].second);
-        }
-
-        // Solve again
-        svd = problem2.jacobiSvd(Eigen::ComputeFullV);
-        t = svd.matrixV().col(svd.matrixV().cols() - 1).normalized();
-
-        auto cost = (problem2 * t).norm();
+        auto cost = error.norm();
         der = cost.derivatives()(0, 0);
         d_bias = cost.derivatives().block<3, 1>(1, 0);
         return cost.value();
@@ -198,6 +216,7 @@ class FineSyncImpl : public IFineSync {
     std::shared_ptr<ICalibrationProvider> calibration_provider_;
 
     GyroIntegrator integrator_;
+    GyroIntegrator integrator_lpf_;
     double sample_rate_;
 };
 
