@@ -39,16 +39,16 @@ int main(int args, char** argv) {
     auto ctx = IContext::CreateContext();
 
     // RegisterFrameLoader(ctx, kFrameLoaderName, "DropMeFiles_tRyrZ/out-rs.mp4");
-    RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
-    // RegisterFrameLoader(ctx, kFrameLoaderName, "193653AA.MP4");
-    RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "GH011230.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "DropMeFiles_tRyrZ/lens.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                "hawkeye_firefly_x_lite_4k_43_v2.json");
+                                "GH011230.MP4.json");
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
@@ -57,7 +57,7 @@ int main(int args, char** argv) {
     RegisterCorrelator(ctx, kCorrelatorName);
     // RegisterGyroLoader(ctx, kGyroLoaderName,
     // "DropMeFiles_tRyrZ/attic_without_fog_2_76_01_v2.csv");
-    RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "193653AA_FIXED.CSV");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
@@ -66,7 +66,8 @@ int main(int args, char** argv) {
 
     ctx->ContextLoaded();
 
-    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.75);
+    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
+    // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.68);
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(20, 20), cv::Size(10, 10));
@@ -75,12 +76,12 @@ int main(int args, char** argv) {
 
     // int pos = 45;
     // int pos = 129;
-    double pos = 69;
+    double pos = 2;
     // double pos = 88*2;
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 30*4; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30*28; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
@@ -118,20 +119,20 @@ int main(int args, char** argv) {
     //     ->DumpDebugCorrelations(38 * 30 + 5, "corrs/out");
 
     RoughCorrelationReport rough_correlation_report, rep;
-    // std::ofstream out("sync.csv");
+    std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 1, 1e-1, -100000, 100000, &rough_correlation_report);
-    int start = 30 * pos;
-    // for (int start = 30 * pos; start < 30 * pos + 30 * 38; start += 30) {
+        ->Run(0, .5, 1e-2, -100000, 100000, &rough_correlation_report);
+    // int start = 30 * pos;
+    for (int start = 30 * pos; start < 30 * pos + 30 * 26; start += 30) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
 
         auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                        ->Run2(rep.offset, rep.bias_estimate, .03, 1e-4, start, start + 120);
+                        ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
 
-        // out << start << "," << sync << std::endl;
-    // }
+        out << start << "," << sync << std::endl;
+    }
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {

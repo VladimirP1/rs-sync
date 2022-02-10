@@ -21,7 +21,7 @@ using namespace rssync;
 
 int main(int argc, char** argv) {
     std::ofstream out("log.csv");
-    std::ifstream in("000458AA_fixed.CSV");
+    std::ifstream in("GH011230.MP4.csv");
 
     std::vector<double> timestamps;
     std::vector<Eigen::Vector3d> rvs;
