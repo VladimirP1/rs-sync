@@ -46,7 +46,7 @@ int main(int args, char** argv) {
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-    // "DropMeFiles_tRyrZ/lens.json");
+    // "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName,
                                 "GH011230.MP4.json");
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
@@ -59,7 +59,7 @@ int main(int args, char** argv) {
     // "DropMeFiles_tRyrZ/attic_without_fog_2_76_01_v2.csv");
     RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
-    // RegisterGyroLoader(ctx, kGyroLoaderName, "193653AA_FIXED.CSV");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
     RegisterFineSync(ctx, kFineSyncName);
     // RegisterComponent<RsReprojector>(ctx, "RsReprojector");
@@ -67,7 +67,7 @@ int main(int args, char** argv) {
     ctx->ContextLoaded();
 
     ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
-    // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.68);
+    // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.75);
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(20, 20), cv::Size(10, 10));
@@ -127,11 +127,13 @@ int main(int args, char** argv) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
-
+        {
+        Stopwatch s("Sync");
         auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
                         ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
-
+        
         out << start << "," << sync << std::endl;
+        }
     }
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;

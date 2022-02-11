@@ -55,7 +55,7 @@ class FineSyncImpl : public IFineSync {
         double m{}, v{.01}, g{};
         double b1{.85}, b2{.9}, eps{1e-8}, eta{5e-4};
         double b1_bias{.85}, b2_bias{.9}, eta_bias{1e-5};
-        for (int i = 0; i < 500; ++i) {
+        for (int i = 0; i < 200; ++i) {
             cost = Cost(ofs, bias, start_frame, end_frame, ou, g, g_bias);
             m = b1 * m + (1 - b1) * g;
             v = b2 * v + (1 - b2) * (g * g);
@@ -73,23 +73,25 @@ class FineSyncImpl : public IFineSync {
             auto [min_ofs_hist, max_ofs_hist] = std::minmax_element(ofs_hist, ofs_hist + hist_len);
             if (*max_ofs_hist - *min_ofs_hist < 5e-3) {
                 bias = bias - (eta_bias / (sqrt(v__bias.array()) + eps) * m__bias.array()).matrix();
-                std::cout << "update " << v__bias.norm() << std::endl;
                 ++cosec_bias_upds;
             } else {
                 cosec_bias_upds = 0;
             }
 
             // Termination
+            bool ou_updated = false;
             if (*max_ofs_hist - *min_ofs_hist < 5e-4 && ou < 1) {
-                ou = std::min(ou + .01, 1.);
-            } else if (cosec_bias_upds > 30 && i > hist_len && *max_ofs_hist - *min_ofs_hist < 5e-4) {
+                ou = std::min(ou + .05, 1.);
+                ou_updated = true;
+            } else if (cosec_bias_upds > 30 && i > hist_len &&
+                       *max_ofs_hist - *min_ofs_hist < 5e-4) {
                 std::cout << "Converged in " << i << " iterations" << std::endl;
                 break;
             }
             hist_pos = (hist_pos + 1) % hist_len;
 
-            std::cout << "g=" << g << " v_=" << v_ << " ofs=" << ofs << " g_bias=" << g_bias(0, 0)
-                      << " " << g_bias(1, 0) << " " << g_bias(2, 0) << std::endl;
+            std::cout << (cosec_bias_upds ? "!" : "o") << (ou_updated ? "+" : " ") << " ofs=" << ofs
+                      << " v_=" << v_ << " v_bias_norm=" << v_bias.norm() << std::endl;
             out << i << "," << g << "," << ofs << "," << v_ << "," << m_ << "," << bias.norm()
                 << "," << cost << std::endl;
         }
@@ -213,6 +215,10 @@ class FineSyncImpl : public IFineSync {
 
         auto svd = problem.jacobiSvd(Eigen::ComputeFullV);
         auto t = svd.matrixV().col(svd.matrixV().cols() - 1).normalized().eval();
+        // for (int i = 0; i < problem.rows(); ++i) {
+        //     if (problem(i, 0) < 0) problem.row(i) = -problem.row(i).eval();
+        // }
+        // auto t = problem.colwise().sum().normalized().eval();
 
         auto error = (problem * t).eval();
 

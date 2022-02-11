@@ -10,10 +10,10 @@
 namespace rssync {
 
 void ResampleGyro(std::vector<double>& timestamps, std::vector<Eigen::Vector3d>& gyro) {
-    double sr = timestamps.size() / (timestamps.back() - timestamps.front());
+    for (int i = timestamps.size(); i--;) timestamps[i] -= timestamps.front();
+    double sr = timestamps.size() / timestamps.back();
     int rounded_sr = int(round(sr / 50) * 50);
     double period = 1. / rounded_sr;
-    // std::cout << rounded_sr << std::endl;
 
     int sample = 0;
     int win_left{}, win_right{};
@@ -29,17 +29,16 @@ void ResampleGyro(std::vector<double>& timestamps, std::vector<Eigen::Vector3d>&
         Eigen::Vector3d new_gyro = Eigen::Vector3d::Zero();
         double kern_sum = 0;
         for (int i = win_left; i < win_right; ++i) {
-            double k = 1 - std::abs((ts - timestamps[i]) / period);
-            if (k < 0) k = 0;
+            double k = std::max(0., 1 - std::abs((ts - timestamps[i]) / period));
             kern_sum += k;
             new_gyro += gyro[i] * k;
         }
         new_gyro /= kern_sum;
         new_gyros.push_back(new_gyro);
         new_timestamps.push_back(ts);
-        // std::cout << ts << std::endl;
+
         // std::cout << win_left << " " << sample << " " << win_right << " " << timestamps.size()
-                //   << std::endl;
+        //           << std::endl;
         ++sample;
     }
     timestamps = new_timestamps;
@@ -61,7 +60,7 @@ class GyroLoaderImpl : public IGyroLoader {
         ResampleGyro(timestamps_, gyro_);
 
         double samplerate = SampleRate();
-        // std::cout << "sr=" << samplerate << std::endl;
+
         for (auto& rv : gyro_) {
             rv /= samplerate;
         }
