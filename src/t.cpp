@@ -47,8 +47,7 @@ int main(int args, char** argv) {
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "hawkeye_firefly_x_lite_4k_43_v2.json");
-    RegisterCalibrationProvider(ctx, kCalibrationProviderName,
-                                "GH011230.MP4.json");
+    RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GH011230.MP4.json");
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
@@ -64,6 +63,8 @@ int main(int args, char** argv) {
     RegisterFineSync(ctx, kFineSyncName);
     // RegisterComponent<RsReprojector>(ctx, "RsReprojector");
 
+    ctx->GetComponent<IGyroLoader>(kGyroLoaderName)->SetOrientation({10. * M_PI / 180., 0. * M_PI / 180., 0});
+
     ctx->ContextLoaded();
 
     ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
@@ -71,8 +72,6 @@ int main(int args, char** argv) {
 
     ctx->GetComponent<ICorrelator>(kCorrelatorName)
         ->SetPatchSizes(cv::Size(20, 20), cv::Size(10, 10));
-    // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)
-    // ->SetOrientation(Quaternion<double>::FromRotationVector({-20. * M_PI / 180., 0, 0}));
 
     // int pos = 45;
     // int pos = 129;
@@ -81,7 +80,7 @@ int main(int args, char** argv) {
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 30*28; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30 * 4; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
@@ -119,22 +118,24 @@ int main(int args, char** argv) {
     //     ->DumpDebugCorrelations(38 * 30 + 5, "corrs/out");
 
     RoughCorrelationReport rough_correlation_report, rep;
-    std::ofstream out("sync.csv");
+    // std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, .5, 1e-2, -100000, 100000, &rough_correlation_report);
-    // int start = 30 * pos;
-    for (int start = 30 * pos; start < 30 * pos + 30 * 26; start += 30) {
-        std::cout << start << std::endl;
-        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-            ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
-        {
+        ->Run(0, 1, 1e-1, -100000, 100000, &rough_correlation_report);
+
+    int start = 30 * pos;
+    // for (int start = 30 * pos; start < 30 * pos + 30 * 26; start += 30) {
+    // std::cout << start << std::endl;
+    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+        ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
+    std::cout << rep.bias_estimate.transpose() << std::endl;
+    {
         Stopwatch s("Sync");
         auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
                         ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
-        
-        out << start << "," << sync << std::endl;
-        }
+
+        // out << start << "," << sync << std::endl;
     }
+    // }
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;
     // for (int i = 30 * pos; i < 30 * pos + 30 * 5; ++i) {

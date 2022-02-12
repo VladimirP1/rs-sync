@@ -71,9 +71,9 @@ class GyroLoaderImpl : public IGyroLoader {
 
     void GetData(Eigen::Vector3d* ptr, size_t size) const override {
         std::copy_n(gyro_.begin(), std::min(size, gyro_.size()), ptr);
-        auto orient = AngleAxisToQuaternion(orientation_);
+        auto orient = AngleAxisToRotationMatrix(orientation_);
         for (int i = 0; i < size; ++i) {
-            ptr[i] = QuaternionToAngleAxis(orient * AngleAxisToQuaternion(ptr[i]));
+            ptr[i] = orient * ptr[i];
         }
     }
 

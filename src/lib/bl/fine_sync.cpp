@@ -48,15 +48,20 @@ class FineSyncImpl : public IFineSync {
         int cosec_bias_upds = 0;
 
         Eigen::Vector3d m_bias, v_bias, g_bias;
-        v_bias.setZero();
+        Eigen::Vector3d align, g_align, m_align, v_align;
         m_bias.setZero();
+        v_bias.setZero();
+        m_align.setZero();
+        v_align.setZero();
+        align.setZero();
         double ou = 0;
         double ofs = initial_offset, cost{};
         double m{}, v{.01}, g{};
         double b1{.85}, b2{.9}, eps{1e-8}, eta{5e-4};
-        double b1_bias{.85}, b2_bias{.9}, eta_bias{1e-5};
+        double b1_bias{.85}, b2_bias{.9}, eta_bias{1e-3};
+        double b1_align{.85}, b2_align{.9}, eta_align{1e-3};
         for (int i = 0; i < 200; ++i) {
-            cost = Cost(ofs, bias, start_frame, end_frame, ou, g, g_bias);
+            cost = Cost(ofs, bias, align, start_frame, end_frame, ou, g, g_bias, g_align);
             m = b1 * m + (1 - b1) * g;
             v = b2 * v + (1 - b2) * (g * g);
             double m_ = m / (1 - b1);
@@ -84,14 +89,24 @@ class FineSyncImpl : public IFineSync {
                 ou = std::min(ou + .05, 1.);
                 ou_updated = true;
             } else if (cosec_bias_upds > 30 && i > hist_len &&
-                       *max_ofs_hist - *min_ofs_hist < 5e-4) {
+                       *max_ofs_hist - *min_ofs_hist < 2e-4) {
                 std::cout << "Converged in " << i << " iterations" << std::endl;
                 break;
             }
             hist_pos = (hist_pos + 1) % hist_len;
 
+            // Alignment update
+            m_align = b1_align * m_align + (1 - b1_align) * g_align;
+            v_align =
+                b1_align * v_align + (1 - b1_align) * (g_align.array() * g_align.array()).matrix();
+            Eigen::Vector3d m__align = m_align / (1 - b1_align);
+            Eigen::Vector3d v__align = v_align / (1 - b2_align);
+            align =
+            align - (eta_align / (sqrt(v__align.array()) + eps) * m__align.array()).matrix();
+
             std::cout << (cosec_bias_upds ? "!" : "o") << (ou_updated ? "+" : " ") << " ofs=" << ofs
-                      << " v_=" << v_ << " v_bias_norm=" << v_bias.norm() << std::endl;
+                      << " v_=" << v_ << " bias_norm=" << bias.norm()
+                      << " align=" << align.transpose() * 180. / M_PI << std::endl;
             out << i << "," << g << "," << ofs << "," << v_ << "," << m_ << "," << bias.norm()
                 << "," << cost << std::endl;
         }
@@ -107,8 +122,9 @@ class FineSyncImpl : public IFineSync {
         for (double ofs = initial_offset - search_radius; ofs < initial_offset + search_radius;
              ofs += search_step) {
             double der;
-            Eigen::Vector3d d_bias;
-            double cost = Cost(ofs, bias, start_frame, end_frame, 1, der, d_bias);
+            Eigen::Vector3d d_bias, d_align;
+            double cost =
+                Cost(ofs, bias, {0, 0, 0}, start_frame, end_frame, 1, der, d_bias, d_align);
             if (cost < best_cost) {
                 best_cost = cost;
                 best_ofs = ofs;
@@ -121,12 +137,14 @@ class FineSyncImpl : public IFineSync {
     }
 
    private:
-    double Cost(double offset, Eigen::Vector3d bias, int start_frame, int end_frame, double ou,
-                double& der, Eigen::Vector3d& d_bias) {
+    double Cost(double offset, Eigen::Vector3d bias, Eigen::Vector3d align, int start_frame,
+                int end_frame, double ou, double& der, Eigen::Vector3d& d_bias,
+                Eigen::Vector3d& d_align) {
         std::vector<int> frame_idxs;
         pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
         der = 0;
-        d_bias = {0, 0, 0};
+        d_bias.setZero();
+        d_align.setZero();
         double cost = 0;
         for (int frame : frame_idxs) {
             if (frame < start_frame || frame >= end_frame) {
@@ -140,16 +158,17 @@ class FineSyncImpl : public IFineSync {
                 continue;
             }
             double tmp;
-            Eigen::Vector3d tmp2;
-            cost += FrameCost(offset, bias, frame, ou, tmp, tmp2);
+            Eigen::Vector3d tmp2, tmp3;
+            cost += FrameCost(offset, bias, align, frame, ou, tmp, tmp2, tmp3);
             der += tmp;
             d_bias += tmp2;
+            d_align += tmp3;
         }
         return cost;
     }
 
-    double FrameCost(double offset, Eigen::Vector3d bias, int frame, double k, double& der,
-                     Eigen::Vector3d& d_bias) {
+    double FrameCost(double offset, Eigen::Vector3d bias, Eigen::Vector3d align, int frame,
+                     double k, double& der, Eigen::Vector3d& d_bias, Eigen::Vector3d& d_align) {
         double rs_coeff = calibration_provider_->GetRsCoefficent();
         auto frame_height = calibration_provider_->GetCalibraiton().Height();
         PairDescription desc;
@@ -163,7 +182,7 @@ class FineSyncImpl : public IFineSync {
             ++j;
         }
 
-        using ScalarT = Eigen::AutoDiffScalar<Eigen::Matrix<double, 4, 1>>;
+        using ScalarT = Eigen::AutoDiffScalar<Eigen::Matrix<double, 7, 1>>;
         Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> problem(j, 3);
         j = 0;
         double interframe = desc.timestamp_b - desc.timestamp_a;
@@ -180,7 +199,7 @@ class FineSyncImpl : public IFineSync {
                     .IntegrateGyro((desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
                                    (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_)
                     .Mix(integrator_.IntegrateGyro(
-                (desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
+                             (desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
                              (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_),
                          k);
 
@@ -192,7 +211,7 @@ class FineSyncImpl : public IFineSync {
 
             auto drot_dt = (gyrob.dt2 - gyrob.dt1).eval();
             auto rot_wdt = gyrob.rot.cast<ScalarT>().eval();
-            rot_wdt(0, 0).derivatives().setZero(); 
+            rot_wdt(0, 0).derivatives().setZero();
             rot_wdt(0, 0).derivatives()(0, 0) = drot_dt(0, 0);
             rot_wdt(1, 0).derivatives()(0, 0) = drot_dt(1, 0);
             rot_wdt(2, 0).derivatives()(0, 0) = drot_dt(2, 0);
@@ -200,11 +219,11 @@ class FineSyncImpl : public IFineSync {
             rot_wdt(1, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(1, 0).derivatives();
             rot_wdt(2, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(2, 0).derivatives();
 
+            Eigen::Matrix<ScalarT, 3, 3> R_align = AngleAxisToRotationMatrix(
+                Eigen::Matrix<ScalarT, 3, 1>{ScalarT{align(0, 0), 7, 4}, ScalarT{align(1, 0), 7, 5},
+                                             ScalarT{align(2, 0), 7, 6}});
             Eigen::Matrix<ScalarT, 3, 3> R = AngleAxisToRotationMatrix((-rot_wdt).eval());
-            // Eigen::Matrix<ScalarT, 3, 3> R =
-            // Eigen::AngleAxis<ScalarT>(-rot_wdt.norm(), rot_wdt.normalized())
-            // .toRotationMatrix();
-            Eigen::Matrix<ScalarT, 3, 1> point_br = R * point_b;
+            Eigen::Matrix<ScalarT, 3, 1> point_br = (R_align * R * R_align.transpose()) * point_b;
             point_br /= point_br(2, 0);
             point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
 
@@ -216,6 +235,7 @@ class FineSyncImpl : public IFineSync {
 
         der = sol(0, 0);
         d_bias = sol.block<3, 1>(1, 0);
+        d_align = sol.block<3, 1>(4, 0);
         return cost;
     }
 
