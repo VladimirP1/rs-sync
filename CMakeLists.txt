@@ -22,7 +22,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 list(APPEND CMAKE_PREFIX_PATH ${CMAKE_BINARY_DIR})
 
 conan_cmake_configure(REQUIRES ${CONAN_REQUIREMENTS}
-                      GENERATORS cmake_find_package_multi
+                      GENERATORS cmake_find_package
                       OPTIONS opencv:with_ffmpeg=True ffmpeg:with_libvpx=False
                       SETTINGS build_type=Release
                     )
