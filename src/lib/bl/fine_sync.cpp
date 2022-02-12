@@ -157,9 +157,9 @@ class FineSyncImpl : public IFineSync {
 
         int j = 0;
         for (int i = 0; i < desc.point_ids.size(); ++i) {
-            if (!desc.mask_essential[i]) {
-                continue;
-            }
+            // if (!desc.mask_essential[i]) {
+            // continue;
+            // }
             ++j;
         }
 
@@ -171,36 +171,34 @@ class FineSyncImpl : public IFineSync {
             double ts_a = rs_coeff * desc.points_a[i].y / frame_height,
                    ts_b = rs_coeff * desc.points_b[i].y / frame_height;
 
-            if (!desc.mask_essential[i]) {
-                continue;
-            }
+            // if (!desc.mask_essential[i]) {
+            // continue;
+            // }
 
-            auto gyro = integrator_.IntegrateGyro(
+            auto gyro =
+                integrator_lpf_
+                    .IntegrateGyro((desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
+                                   (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_)
+                    .Mix(integrator_.IntegrateGyro(
                 (desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
-                (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_);
-            auto gyro_lpf = integrator_lpf_.IntegrateGyro(
-                (desc.timestamp_a + ts_a * interframe + offset) * sample_rate_,
-                (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_);
+                             (desc.timestamp_b + ts_b * interframe + offset) * sample_rate_),
+                         k);
+
             auto gyrob = gyro.Bias(bias);
-            auto gyrob_lpf = gyro_lpf.Bias(bias);
 
             Eigen::Vector3d point_a, point_b;
             point_a << desc.points_undistorted_a[i].x, desc.points_undistorted_a[i].y, 1;
             point_b << desc.points_undistorted_b[i].x, desc.points_undistorted_b[i].y, 1;
 
-            auto drot_dt =
-                (k * (gyrob.dt2 - gyrob.dt1) + (1 - k) * (gyrob_lpf.dt2 - gyrob_lpf.dt1)).eval();
-            auto rot_wdt =
-                (k * gyrob.rot.cast<ScalarT>() + (1 - k) * gyrob_lpf.rot.cast<ScalarT>()).eval();
+            auto drot_dt = (gyrob.dt2 - gyrob.dt1).eval();
+            auto rot_wdt = gyrob.rot.cast<ScalarT>().eval();
+            rot_wdt(0, 0).derivatives().setZero(); 
             rot_wdt(0, 0).derivatives()(0, 0) = drot_dt(0, 0);
             rot_wdt(1, 0).derivatives()(0, 0) = drot_dt(1, 0);
             rot_wdt(2, 0).derivatives()(0, 0) = drot_dt(2, 0);
-            rot_wdt(0, 0).derivatives().block<3, 1>(1, 0) =
-                k * gyro.rot(0, 0).derivatives() + (1 - k) * gyro_lpf.rot(0, 0).derivatives();
-            rot_wdt(1, 0).derivatives().block<3, 1>(1, 0) =
-                k * gyro.rot(1, 0).derivatives() + (1 - k) * gyro_lpf.rot(1, 0).derivatives();
-            rot_wdt(2, 0).derivatives().block<3, 1>(1, 0) =
-                k * gyro.rot(2, 0).derivatives() + (1 - k) * gyro_lpf.rot(2, 0).derivatives();
+            rot_wdt(0, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(0, 0).derivatives();
+            rot_wdt(1, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(1, 0).derivatives();
+            rot_wdt(2, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(2, 0).derivatives();
 
             Eigen::Matrix<ScalarT, 3, 3> R = AngleAxisToRotationMatrix((-rot_wdt).eval());
             // Eigen::Matrix<ScalarT, 3, 3> R =
@@ -213,19 +211,102 @@ class FineSyncImpl : public IFineSync {
             problem.row(j++) = point_br.normalized().cross(point_a.cast<ScalarT>().normalized());
         }
 
-        auto svd = problem.jacobiSvd(Eigen::ComputeFullV);
-        auto t = svd.matrixV().col(svd.matrixV().cols() - 1).normalized().eval();
-        // for (int i = 0; i < problem.rows(); ++i) {
-        //     if (problem(i, 0) < 0) problem.row(i) = -problem.row(i).eval();
-        // }
-        // auto t = problem.colwise().sum().normalized().eval();
+        double cost;
+        Eigen::MatrixXd sol = HlsSolResidual(problem, &cost);
 
-        auto error = (problem * t).eval();
+        der = sol(0, 0);
+        d_bias = sol.block<3, 1>(1, 0);
+        return cost;
+    }
 
-        auto cost = error.norm();
-        der = cost.derivatives()(0, 0);
-        d_bias = cost.derivatives().block<3, 1>(1, 0);
-        return cost.value();
+    template <class ScalarT>
+    Eigen::MatrixXd HlsSolResidual(Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> P_ad,
+                                   double* error = 0) const {
+        {  // Approximately solve the problem and reduce outlier weights
+            Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
+            for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
+
+            for (int i = 0; i < P.rows(); ++i) {
+                if (P(i, 0) < 0) P.row(i) = -P.row(i).eval();
+            }
+            auto t = P.colwise().sum().normalized().eval();
+
+            // auto svd = P.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
+            // auto V = svd.matrixV().eval();
+            // auto t = V.col(V.cols() - 1).eval();
+
+            auto residual_val = (P * t).eval();
+
+            auto residuals_sorted = residual_val.cwiseAbs().eval();
+            std::sort(residuals_sorted.data(), residuals_sorted.data() + residuals_sorted.rows());
+            if (residuals_sorted.size() > 10) {
+                double cutoff =
+                    residuals_sorted.data()[static_cast<size_t>(residuals_sorted.size() * .8)];
+                double maxerr = residuals_sorted.data()[residuals_sorted.rows() - 1];
+
+                for (int i = 0; i < P_ad.rows(); ++i) {
+                    double rv = residual_val(i, 0);
+                    if (rv > cutoff) {
+                        double k = (1 - (rv - cutoff) / (maxerr - cutoff));
+                        P_ad.row(i) *= k * k * .98 + .02;
+                    }
+                }
+            }
+        }
+
+        /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
+        Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
+        for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
+        auto svd = P.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
+
+        auto U = svd.matrixU().eval();
+        auto S = svd.singularValues().eval();
+        auto V = svd.matrixV().eval();
+        auto S2 = S.cwiseProduct(S).eval();
+        // clang-format off
+        auto F =
+            (1. / 
+                (
+                    S2.transpose().replicate(S2.rows(), 1) - S2.replicate(1, S2.rows())
+                ).array()
+            ).matrix().eval();
+        F.diagonal().setZero();
+        // clang-format on
+
+        auto t = V.col(V.cols() - 1).eval();
+        auto residual_val = (P * t).eval();
+
+        const int n_der = P_ad(0, 0).derivatives().rows();
+        Eigen::MatrixXd dResidualNorm(n_der, 1);
+        for (int i = 0; i < n_der; ++i) {
+            Eigen::MatrixXd dP(P.rows(), P.cols());
+            for (int j = 0; j < dP.rows() * dP.cols(); ++j)
+                dP.data()[j] = P_ad.data()[j].derivatives()(i, 0);
+
+            // clang-format off
+            auto dV = 
+                V * (
+                        (
+                            F.array() * (
+                                S.asDiagonal() * U.transpose() * dP * V 
+                                + V.transpose() * dP.transpose() * U * S.asDiagonal()
+                            ).array()
+                        ).matrix() 
+                        + (Eigen::MatrixXd::Identity(P.cols(), P.cols()) - V * V.transpose()) 
+                            * dP.transpose() * U * S.asDiagonal().inverse()
+                    );
+            // clang-format on
+
+            auto dt = dV.col(dV.cols() - 1).eval();
+            auto derivs = ((dP * t + P * dt).array() * (2 * residual_val).array()).eval();
+
+            dResidualNorm(i, 0) = derivs.sum();
+        }
+
+        if (error) {
+            *error = residual_val.norm();
+        }
+        return dResidualNorm;
     }
 
     std::shared_ptr<IPairStorage> pair_storage_;

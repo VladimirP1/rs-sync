@@ -129,7 +129,7 @@ class RoughGyroCorrelatorImpl : public IRoughGyroCorrelator {
 
         // Main part
         inliers.clear();
-        double best_cost = 1;
+        double best_cost = 10;
         Eigen::Vector3d best_bias{};
 
         bias = {0, 0, 0};

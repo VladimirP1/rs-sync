@@ -46,10 +46,17 @@ class SegmentTree {
         }
 
         ++r;
+        bool u = true;
         typename G::value_type sum = group_.unit();
         while (l < r) {
-            if (l & 1) sum = group_.add(data_[l++], sum);
-            if (r & 1) sum = group_.add(sum, data_[--r]);
+            if (l & 1) {
+                sum = u ? data_[l++] : group_.add(data_[l++], sum);
+                u = false;
+            }
+            if (r & 1) {
+                sum = u ? data_[--r] : group_.add(sum, data_[--r]);
+                u = false;
+            }
             l /= 2;
             r /= 2;
         }

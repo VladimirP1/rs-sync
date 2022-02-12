@@ -6,6 +6,7 @@
 #include <io/bb_csv.hpp>
 #include <ds/prefix_sums.hpp>
 #include <ds/range_interpolated.hpp>
+#include <math/rotation.h>
 
 namespace rssync {
 
@@ -70,11 +71,9 @@ class GyroLoaderImpl : public IGyroLoader {
 
     void GetData(Eigen::Vector3d* ptr, size_t size) const override {
         std::copy_n(gyro_.begin(), std::min(size, gyro_.size()), ptr);
-        const Eigen::AngleAxis<double> orient{orientation_.norm(), orientation_.normalized()};
+        auto orient = AngleAxisToQuaternion(orientation_);
         for (int i = 0; i < size; ++i) {
-            const auto new_v = Eigen::AngleAxis<double>{
-                orient * Eigen::AngleAxis<double>(ptr[i].norm(), ptr[i].normalized())};
-            ptr[i] = new_v.axis() * new_v.angle();
+            ptr[i] = QuaternionToAngleAxis(orient * AngleAxisToQuaternion(ptr[i]));
         }
     }
 

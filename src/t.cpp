@@ -91,7 +91,7 @@ int main(int args, char** argv) {
         // desc.enable_debug = true;
         // ctx->GetComponent<IPairStorage>(kPairStorageName)->Update(i, desc);
 
-        ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
+        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
 
         // ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
 
