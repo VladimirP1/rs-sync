@@ -73,6 +73,7 @@ class FineSyncImpl : public IFineSync {
             : fs_(fs), frame_(frame), ou_(ou) {
             AddParameterBlock(1);
             AddParameterBlock(3);
+            AddParameterBlock(3);
 
             fs_->pair_storage_->Get(frame_, desc_);
 
@@ -85,7 +86,7 @@ class FineSyncImpl : public IFineSync {
             double offset = parameters[0][0];
             Eigen::Vector3d bias, align;
             bias << parameters[1][0], parameters[1][1], parameters[1][2];
-            align.setZero();
+            align << parameters[2][0], parameters[2][1], parameters[2][2];
 
             double rs_coeff = fs_->calibration_provider_->GetRsCoefficent();
             auto frame_height = fs_->calibration_provider_->GetCalibraiton().Height();
@@ -153,7 +154,10 @@ class FineSyncImpl : public IFineSync {
                 if (jacobians[1]) {
                     auto sm = der.block(0, 1, der.rows(), 3).transpose().eval();
                     std::copy(sm.data(), sm.data() + sm.rows() * sm.cols(), jacobians[1]);
-                    // std::fill(jacobians[1], jacobians[1] + sm.rows() * sm.cols(), 0.);
+                }
+                if (jacobians[2]) {
+                    auto sm = der.block(0, 4, der.rows(), 3).transpose().eval();
+                    std::copy(sm.data(), sm.data() + sm.rows() * sm.cols(), jacobians[2]);
                 }
             }
 
@@ -244,6 +248,8 @@ class FineSyncImpl : public IFineSync {
                double search_step, int start_frame, int end_frame) override {
         ceres::Problem problem;
         double ou = 0;
+        Eigen::Vector3d align;
+        align.setZero();
         std::vector<int> frame_idxs;
         pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
         for (int frame : frame_idxs) {
@@ -257,7 +263,7 @@ class FineSyncImpl : public IFineSync {
             }
 
             problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou), nullptr,
-                                     &initial_offset, bias.data());
+                                     &initial_offset, bias.data(), align.data());
         }
 
         std::cout << "Before sync: " << initial_offset << "  " << bias.transpose() << std::endl;
