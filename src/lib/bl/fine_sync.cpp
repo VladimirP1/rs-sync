@@ -266,16 +266,17 @@ class FineSyncImpl : public IFineSync {
         options.linear_solver_type = ceres::DENSE_QR;
         options.minimizer_progress_to_stdout = true;
         options.max_num_iterations = 200;
-        options.parameter_tolerance = 1e-4;
-        options.max_trust_region_radius = 1e-2;
+        options.parameter_tolerance = 1e-5;
+        options.max_trust_region_radius = 1e-3;
         options.initial_trust_region_radius = 8e-4;
         options.use_inner_iterations = true;
+        options.use_nonmonotonic_steps = true;
 
         struct Cb : public ceres::IterationCallback {
               virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
                   if (summary.step_is_successful) {
                       std::unique_lock<std::mutex> lock(m);
-                      ou[0] = std::min(1., ou[0] + .3);
+                      ou[0] = std::min(1., ou[0] + .1);
                   }
                   return ceres::SOLVER_CONTINUE;
               };
@@ -286,7 +287,6 @@ class FineSyncImpl : public IFineSync {
         cb.ou = & ou;
         options.callbacks.push_back(&cb);
 
-        // options.use_nonmonotonic_steps = true;
         options.num_threads = 8;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
