@@ -63,7 +63,7 @@ class FineSyncImpl : public IFineSync {
 
         sample_rate_ = gyro_loader_->SampleRate();
         integrator_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
-        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 100.);
+        LowpassGyro(gyro_data.data(), gyro_data.size(), sample_rate_ / 50.);
         integrator_lpf_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
@@ -179,14 +179,31 @@ class FineSyncImpl : public IFineSync {
                 // auto median = softmedian(residual_val, 1);
                 // std::cout << median << std::endl;
 
-                auto mean = residual_val.mean();
-                auto thresh = mean;
+                auto thresh = residual_val.mean();
+                ;
+                auto radius = softmax(residual_val, 100) - thresh;
+
+                // std::cout << radius << std::endl;
 
                 for (int i = 0; i < P_ad.rows(); ++i) {
-                    ScalarT x = (thresh - residual_val(i, 0)) * 100;
+                    ScalarT x = (thresh - residual_val(i, 0)) / radius * 5;
                     P_ad.row(i) *= 1. / (1. + exp(-x));
                 }
             }
+
+            // {
+            //     auto t = P_ad.colwise().sum().normalized().eval();
+            //     auto res = (P_ad * t).eval();
+            //     residuals.resize(P_ad.rows(), 1);
+            //     derivatives.resize(P_ad.rows(), res(0,0).derivatives().rows());
+            //     for (int j = 0; j < P_ad.rows(); ++j) {
+            //         residuals(j,0) = res(j,0).value();
+            //         for (int i = 0; i < res(j,0).derivatives().rows(); ++i) {
+            //             derivatives(j,i) = res(j,0).derivatives()(i,0);
+            //         }
+            //     }
+            //     return;
+            // }
 
             /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
             Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
@@ -275,22 +292,32 @@ class FineSyncImpl : public IFineSync {
         options.parameter_tolerance = 1e-5;
         options.max_trust_region_radius = 1e-3;
         options.initial_trust_region_radius = 8e-4;
+        options.inner_iteration_tolerance = 1e-6;
         options.use_inner_iterations = true;
         options.use_nonmonotonic_steps = true;
 
+        // options.minimizer_type = ceres::LINE_SEARCH;
+        // options.minimizer_progress_to_stdout = true;
+        // options.use_nonmonotonic_steps = true;
+        // options.min_line_search_step_size = 1e-12;
+        // options.line_search_type = ceres::ARMIJO;
+        options.line_search_direction_type = ceres::NONLINEAR_CONJUGATE_GRADIENT;
+
+
         struct Cb : public ceres::IterationCallback {
-              virtual ceres::CallbackReturnType operator()(const ceres::IterationSummary& summary) override {
-                  if (summary.step_is_successful) {
-                      std::unique_lock<std::mutex> lock(m);
-                      ou[0] = std::min(1., ou[0] + .1);
-                  }
-                  return ceres::SOLVER_CONTINUE;
-              };
-              double*ou;
-              std::mutex m;
+            virtual ceres::CallbackReturnType operator()(
+                const ceres::IterationSummary& summary) override {
+                if (summary.step_is_successful) {
+                    std::unique_lock<std::mutex> lock(m);
+                    ou[0] = std::min(1., ou[0] + .1);
+                }
+                return ceres::SOLVER_CONTINUE;
+            };
+            double* ou;
+            std::mutex m;
         } cb;
-        
-        cb.ou = & ou;
+
+        cb.ou = &ou;
         options.callbacks.push_back(&cb);
 
         options.num_threads = 8;
@@ -298,7 +325,8 @@ class FineSyncImpl : public IFineSync {
         ceres::Solve(options, &problem, &summary);
         std::cout << summary.FullReport() << "\n";
 
-        std::cout << "Pre-Sync: " << initial_offset << "  " << bias.transpose() << std::endl;
+        std::cout << "Pre-Sync: " << initial_offset << "  " << bias.transpose() * 180 / M_PI * 200
+                  << " | " << align.transpose() * 180 / M_PI << std::endl;
 
         // ou = 1;
 
