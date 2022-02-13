@@ -1,38 +1,50 @@
 #include <iostream>
 
-#include <math/gyro_integrator.hpp>
+#include <Eigen/Eigen>
 
-using Eigen::AngleAxis;
-using Eigen::AutoDiffScalar;
-using Eigen::Matrix;
-using Eigen::Quaternion;
-using Eigen::Vector3d;
 using std::cout;
 
+template <class M>
+M softargmax(const M& a, double k = 1) {
+    return ((k * a).exp() / (k * a).exp().sum());
+}
+
+template <class M>
+auto softmax(const M& a, double k = 1) {
+    return (a * softargmax(a, k)).sum();
+}
+
+template <class M>
+M softabs(const M& a, double k = 1) {
+    return (a * (k * a).exp() - a * (k * -a).exp()) / ((k * a).exp() + (k * -a).exp());
+}
+
+template <class M>
+M softargmedian(const M& a, double k = 1) {
+    auto rep = a.replicate(1, a.rows()).eval();
+    return softargmax((-softabs((rep.transpose() - rep).eval(), k).rowwise().sum()).eval(), k);
+}
+
+template <class M>
+auto softmedian(const M& a, double k = 1) {
+    return (a * softargmedian(a, k)).sum();
+}
+
 int main() {
-    std::vector<Eigen::Vector3d> data;
+    Eigen::Array<double, 8, 1> a;
+    a << 2, 5, 8, 5, 5, 9, 1, 2;
 
-    for (int i = 0; i < 10000; ++i) {
-        Vector3d v;
-        v << 1e-9, 0, 0;
-        data.push_back(v);
-    }
+    a/=100;
 
-    GyroIntegrator gi(data.data(), data.size());
+    std::cout << a.transpose() << std::endl;
 
-    auto res = gi.IntegrateGyro(4, 1500.3);
+    // Softmax
 
-    Vector3d bias;
-    bias << 1500 * 1e-9, 0, 0;
-    auto bres = res.Bias(bias);
+    double k = 1;
+    std::cout << softmedian(a) << std::endl;
 
-    auto bb = res.FindBias(bias);
-    std::cout << bb.norm() << std::endl;
-
-    std::cout << res.rot << "\n\n" << res.dt1 << std::endl;
-    std::cout << "\n\n";
-    std::cout << bres.rot << "\n\n" << bres.dt2 << std::endl;
-    // std::cout << q.norm().derivatives()[1] << std::endl;
+    std::sort(a.data(), a.data() + 8);
+    std::cout << a.transpose() << std::endl;
 
     return 0;
 }

@@ -17,7 +17,37 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/calib3d.hpp>
 
+#include <ceres/ceres.h>
+
 using Eigen::Matrix;
+
+namespace {
+template <class M>
+M softargmax(const M& a, double k = 1) {
+    return ((k * a).exp() / (k * a).exp().sum());
+}
+
+template <class M>
+auto softmax(const M& a, double k = 1) {
+    return (a * softargmax(a, k)).sum();
+}
+
+template <class M>
+M softabs(const M& a, double k = 1) {
+    return (a * (k * a).exp() - a * (k * -a).exp()) / ((k * a).exp() + (k * -a).exp());
+}
+
+template <class M>
+M softargmedian(const M& a, double k = 1) {
+    auto rep = a.replicate(1, a.rows()).eval();
+    return softargmax((-softabs((rep.transpose() - rep).eval(), k).rowwise().sum()).eval(), k);
+}
+
+template <class M>
+auto softmedian(const M& a, double k = 1) {
+    return (a * softargmedian(a, k)).sum();
+}
+}  // namespace
 
 namespace rssync {
 class FineSyncImpl : public IFineSync {
@@ -37,81 +67,74 @@ class FineSyncImpl : public IFineSync {
         integrator_lpf_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
-    double Run(double initial_offset, Eigen::Vector3d bias, double search_radius,
-               double search_step, int start_frame, int end_frame) override {
-        std::ofstream out{"fine_cost0.csv"};
+    class FrameCostFunction : public ceres::SizedCostFunction<1, 1, 3> {
+       public:
+        FrameCostFunction(FineSyncImpl* fs, int frame, double* ou)
+            : fs_(fs), frame_(frame), ou_(ou) {}
+        virtual ~FrameCostFunction() {}
+        virtual bool Evaluate(double const* const* parameters, double* residuals,
+                              double** jacobians) const {
+            Eigen::Vector3d bias;
+            bias << parameters[1][0], parameters[1][1], parameters[1][2];
 
-        static constexpr int hist_len = 20;
-        double ofs_hist[hist_len];
-        int hist_pos = 0;
+            double dt;
+            Eigen::Vector3d dbias, dalign;
+            residuals[0] =
+                fs_->FrameCost(parameters[0][0], bias, {0, 0, 0}, frame_, *ou_, dt, dbias, dalign);
 
-        int cosec_bias_upds = 0;
-
-        Eigen::Vector3d m_bias, v_bias, g_bias;
-        Eigen::Vector3d align, g_align, m_align, v_align;
-        m_bias.setZero();
-        v_bias.setZero();
-        m_align.setZero();
-        v_align.setZero();
-        align.setZero();
-        double ou = 0;
-        double ofs = initial_offset, cost{};
-        double m{}, v{.01}, g{};
-        double b1{.85}, b2{.9}, eps{1e-8}, eta{5e-4};
-        double b1_bias{.85}, b2_bias{.9}, eta_bias{1e-3};
-        double b1_align{.85}, b2_align{.9}, eta_align{1e-3};
-        for (int i = 0; i < 200; ++i) {
-            cost = Cost(ofs, bias, align, start_frame, end_frame, ou, g, g_bias, g_align);
-            m = b1 * m + (1 - b1) * g;
-            v = b2 * v + (1 - b2) * (g * g);
-            double m_ = m / (1 - b1);
-            double v_ = v / (1 - b2);
-            ofs = ofs - eta / (sqrt(v_) + eps) * m_;
-
-            m_bias = b1_bias * m_bias + (1 - b1_bias) * g_bias;
-            v_bias = b1_bias * v_bias + (1 - b1_bias) * (g_bias.array() * g_bias.array()).matrix();
-            Eigen::Vector3d m__bias = m_bias / (1 - b1_bias);
-            Eigen::Vector3d v__bias = v_bias / (1 - b2_bias);
-
-            ofs_hist[hist_pos] = ofs;
-
-            auto [min_ofs_hist, max_ofs_hist] = std::minmax_element(ofs_hist, ofs_hist + hist_len);
-            if (*max_ofs_hist - *min_ofs_hist < 5e-3) {
-                bias = bias - (eta_bias / (sqrt(v__bias.array()) + eps) * m__bias.array()).matrix();
-                ++cosec_bias_upds;
-            } else {
-                cosec_bias_upds = 0;
+            if (jacobians) {
+                if (jacobians[0]) jacobians[0][0] = dt;
+                if (jacobians[1]) {
+                    jacobians[1][0] = dbias.x();
+                    jacobians[1][1] = dbias.y();
+                    jacobians[1][2] = dbias.z();
+                }
             }
-
-            // Termination
-            bool ou_updated = false;
-            if (*max_ofs_hist - *min_ofs_hist < 5e-4 && ou < 1) {
-                ou = std::min(ou + .05, 1.);
-                ou_updated = true;
-            } else if (cosec_bias_upds > 30 && i > hist_len &&
-                       *max_ofs_hist - *min_ofs_hist < 2e-4) {
-                std::cout << "Converged in " << i << " iterations" << std::endl;
-                break;
-            }
-            hist_pos = (hist_pos + 1) % hist_len;
-
-            // Alignment update
-            m_align = b1_align * m_align + (1 - b1_align) * g_align;
-            v_align =
-                b1_align * v_align + (1 - b1_align) * (g_align.array() * g_align.array()).matrix();
-            Eigen::Vector3d m__align = m_align / (1 - b1_align);
-            Eigen::Vector3d v__align = v_align / (1 - b2_align);
-            align =
-            align - (eta_align / (sqrt(v__align.array()) + eps) * m__align.array()).matrix();
-
-            std::cout << (cosec_bias_upds ? "!" : "o") << (ou_updated ? "+" : " ") << " ofs=" << ofs
-                      << " v_=" << v_ << " bias_norm=" << bias.norm()
-                      << " align=" << align.transpose() * 180. / M_PI << std::endl;
-            out << i << "," << g << "," << ofs << "," << v_ << "," << m_ << "," << bias.norm()
-                << "," << cost << std::endl;
+            return true;
         }
 
-        return ofs;
+       private:
+        FineSyncImpl* fs_;
+        int frame_;
+        double* ou_;
+    };
+
+    double Run(double initial_offset, Eigen::Vector3d bias, double search_radius,
+               double search_step, int start_frame, int end_frame) override {
+        ceres::Problem problem;
+        double ou = 0;
+        std::vector<int> frame_idxs;
+        pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
+        for (int frame : frame_idxs) {
+            if (frame < start_frame || frame >= end_frame) {
+                continue;
+            }
+            PairDescription desc;
+            pair_storage_->Get(frame, desc);
+            if (!desc.has_undistorted) {
+                continue;
+            }
+
+            problem.AddResidualBlock(new FrameCostFunction(this, frame, &ou), nullptr,
+                                     &initial_offset, bias.data());
+        }
+
+        ceres::Solver::Options options;
+        options.linear_solver_type = ceres::DENSE_QR;
+        options.minimizer_progress_to_stdout = true;
+        // options.use_inner_iterations = true;
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << "\n";
+
+        ou = 1;
+
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << "\n";
+
+        std::cout << "Sync: " << initial_offset << "  " << bias.transpose() << std::endl;
+
+        return initial_offset;
     }
 
     double Run2(double initial_offset, Eigen::Vector3d bias, double search_radius,
@@ -243,34 +266,19 @@ class FineSyncImpl : public IFineSync {
     Eigen::MatrixXd HlsSolResidual(Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> P_ad,
                                    double* error = 0) const {
         {  // Approximately solve the problem and reduce outlier weights
-            Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
-            for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
-
-            for (int i = 0; i < P.rows(); ++i) {
-                if (P(i, 0) < 0) P.row(i) = -P.row(i).eval();
+            for (int i = 0; i < P_ad.rows(); ++i) {
+                if (P_ad(i, 0) < 0) P_ad.row(i) = -P_ad.row(i).eval();
             }
-            auto t = P.colwise().sum().normalized().eval();
+            auto t = P_ad.colwise().sum().normalized().eval();
 
-            // auto svd = P.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
-            // auto V = svd.matrixV().eval();
-            // auto t = V.col(V.cols() - 1).eval();
+            auto residual_val = (P_ad * t).cwiseAbs().array().eval();
 
-            auto residual_val = (P * t).eval();
+            auto median = softmedian(residual_val, 1);
 
-            auto residuals_sorted = residual_val.cwiseAbs().eval();
-            std::sort(residuals_sorted.data(), residuals_sorted.data() + residuals_sorted.rows());
-            if (residuals_sorted.size() > 10) {
-                double cutoff =
-                    residuals_sorted.data()[static_cast<size_t>(residuals_sorted.size() * .8)];
-                double maxerr = residuals_sorted.data()[residuals_sorted.rows() - 1];
-
-                for (int i = 0; i < P_ad.rows(); ++i) {
-                    double rv = residual_val(i, 0);
-                    if (rv > cutoff) {
-                        double k = (1 - (rv - cutoff) / (maxerr - cutoff));
-                        P_ad.row(i) *= k * k * .98 + .02;
-                    }
-                }
+            for (int i = 0; i < P_ad.rows(); ++i) {
+                ScalarT x = (median - residual_val(i,0)) * 100;
+                P_ad.row(i) *= 1. / (1. + exp(-x));
+                
             }
         }
 

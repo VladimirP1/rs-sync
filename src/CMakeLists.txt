@@ -25,7 +25,7 @@ target_link_libraries(verify_camera_model libmath libio libbl Eigen3::Eigen)
 # -----
 
 add_executable(ad autodiff.cpp)
-target_link_libraries(ad libbl)
+target_link_libraries(ad Eigen3::Eigen)
 
 # -----
 

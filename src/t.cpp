@@ -59,19 +59,18 @@ int main(int args, char** argv) {
     RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA.bbl.csv");
     RegisterRoughGyroCorrelator(ctx, kRoughGyroCorrelatorName);
     RegisterFineSync(ctx, kFineSyncName);
     // RegisterComponent<RsReprojector>(ctx, "RsReprojector");
 
-    ctx->GetComponent<IGyroLoader>(kGyroLoaderName)->SetOrientation({10. * M_PI / 180., 0. * M_PI / 180., 0});
+    // ctx->GetComponent<IGyroLoader>(kGyroLoaderName)->SetOrientation({-15. * M_PI / 180., 0. *
+    // M_PI / 180., 0});
 
     ctx->ContextLoaded();
 
     ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
-    // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.75);
-
-    ctx->GetComponent<ICorrelator>(kCorrelatorName)
-        ->SetPatchSizes(cv::Size(20, 20), cv::Size(10, 10));
+    // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.5);
 
     // int pos = 45;
     // int pos = 129;
@@ -124,17 +123,17 @@ int main(int args, char** argv) {
 
     int start = 30 * pos;
     // for (int start = 30 * pos; start < 30 * pos + 30 * 26; start += 30) {
-    // std::cout << start << std::endl;
-    ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
-    std::cout << rep.bias_estimate.transpose() << std::endl;
-    {
-        Stopwatch s("Sync");
-        auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                        ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
+        std::cout << start << std::endl;
+        ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
+            ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
+        std::cout << rep.bias_estimate.transpose() << std::endl;
+        {
+            Stopwatch s("Sync");
+            auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
+                            ->Run(rep.offset, rep.bias_estimate, .03, 5e-4, start, start + 120);
 
-        // out << start << "," << sync << std::endl;
-    }
+            // out << start << "," << sync << std::endl;
+        }
     // }
 
     // std::cout << rough_correlation_report.bias_estimate.transpose() << std::endl;

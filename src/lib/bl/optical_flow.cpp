@@ -188,7 +188,7 @@ class OpticalFlowLK : public IOpticalFlow {
     std::mutex cache_mutex_;
 
     int min_corners_{70};
-    int max_corners_{120};
+    int max_corners_{200};
     double discard_threshold_scale_{1e-3};
 };
 
