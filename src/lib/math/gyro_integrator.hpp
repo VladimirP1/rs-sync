@@ -3,7 +3,7 @@
 #include "rotation.h"
 
 #include <ds/segment_tree.hpp>
-#include <ds/range_query_cache.hpp>
+// #include <ds/range_query_cache.hpp>
 
 #include <Eigen/Eigen>
 #include <unsupported/Eigen/AutoDiff>
@@ -73,7 +73,7 @@ struct GyroIntegrator {
                 DiffT{samples[i][2], 3, 2};
             v.push_back(AngleAxisToQuaternion(rv));
         }
-        segment_tree_ = {60, v.begin(), v.end()};
+        segment_tree_ = {v.begin(), v.end()};
     }
 
     GyroThunk IntegrateGyro(double t1, double t2) const {
@@ -147,7 +147,8 @@ struct GyroIntegrator {
         value_type inv(const value_type& a) const { return mult(a, -1.); }
     };
 
-    RangeQueryCache<SegmentTree<QuaternionGroup>> segment_tree_;
+    // RangeQueryCache<SegmentTree<QuaternionGroup>> segment_tree_;
+    SegmentTree<QuaternionGroup> segment_tree_;
 };
 
 inline void LowpassGyro(Eigen::Vector3d* samples, int length, int divider) {
