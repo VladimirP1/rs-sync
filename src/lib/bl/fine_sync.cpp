@@ -21,34 +21,6 @@
 
 using Eigen::Matrix;
 
-namespace {
-template <class M>
-M softargmax(const M& a, double k = 1) {
-    return ((k * a).exp() / (k * a).exp().sum());
-}
-
-template <class M>
-auto softmax(const M& a, double k = 1) {
-    return (a * softargmax(a, k)).sum();
-}
-
-template <class M>
-M softabs(const M& a, double k = 1) {
-    return (a * (k * a).exp() - a * (k * -a).exp()) / ((k * a).exp() + (k * -a).exp());
-}
-
-template <class M>
-M softargmedian(const M& a, double k = 1) {
-    auto rep = a.replicate(1, a.rows()).eval();
-    return softargmax((-softabs((rep.transpose() - rep).eval(), k).rowwise().sum()).eval(), k);
-}
-
-template <class M>
-auto softmedian(const M& a, double k = 1) {
-    return (a * softargmedian(a, k)).sum();
-}
-}  // namespace
-
 namespace rssync {
 class FineSyncImpl : public IFineSync {
    public:
@@ -83,7 +55,7 @@ class FineSyncImpl : public IFineSync {
 
         virtual bool Evaluate(double const* const* parameters, double* residuals,
                               double** jacobians) const override {
-            double offset = parameters[0][0];
+            double offset = parameters[0][0] / 1000.;
             Eigen::Vector3d bias, align;
             bias << parameters[1][0], parameters[1][1], parameters[1][2];
             align << parameters[2][0], parameters[2][1], parameters[2][2];
@@ -111,7 +83,7 @@ class FineSyncImpl : public IFineSync {
                                      fs_->sample_rate_),
                              *ou_);
 
-                auto gyrob = gyro.Bias(bias);
+                auto gyrob = gyro.Bias(bias / fs_->gyro_loader_->SampleRate());
 
                 Eigen::Vector3d point_a, point_b;
                 point_a << desc_.points_undistorted_a[i].x, desc_.points_undistorted_a[i].y, 1;
@@ -120,6 +92,8 @@ class FineSyncImpl : public IFineSync {
                 auto drot_dt = (gyrob.dt2 - gyrob.dt1).eval();
                 auto rot_wdt = gyrob.rot.cast<ScalarT>().eval();
                 rot_wdt(0, 0).derivatives().setZero();
+                rot_wdt(1, 0).derivatives().setZero();
+                rot_wdt(2, 0).derivatives().setZero();
                 rot_wdt(0, 0).derivatives()(0, 0) = drot_dt(0, 0);
                 rot_wdt(1, 0).derivatives()(0, 0) = drot_dt(1, 0);
                 rot_wdt(2, 0).derivatives()(0, 0) = drot_dt(2, 0);
@@ -148,16 +122,22 @@ class FineSyncImpl : public IFineSync {
 
             if (jacobians) {
                 if (jacobians[0]) {
-                    auto col = der.col(0).eval();
+                    auto col = (der.col(0) / 1000.).eval();
                     std::copy(col.data(), col.data() + col.rows(), jacobians[0]);
                 }
                 if (jacobians[1]) {
-                    auto sm = der.block(0, 1, der.rows(), 3).transpose().eval();
-                    std::copy(sm.data(), sm.data() + sm.rows() * sm.cols(), jacobians[1]);
+                    auto sm = der.block(0, 1, der.rows(), 3).eval();
+                    Eigen::Map<
+                        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
+                        map(jacobians[1], sm.rows(), sm.cols());
+                    map = sm / fs_->gyro_loader_->SampleRate();
                 }
                 if (jacobians[2]) {
-                    auto sm = der.block(0, 4, der.rows(), 3).transpose().eval();
-                    std::copy(sm.data(), sm.data() + sm.rows() * sm.cols(), jacobians[2]);
+                    auto sm = der.block(0, 4, der.rows(), 3).eval();
+                    Eigen::Map<
+                        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
+                        map(jacobians[2], sm.rows(), sm.cols());
+                    map = sm;
                 }
             }
 
@@ -168,46 +148,25 @@ class FineSyncImpl : public IFineSync {
         template <class ScalarT>
         void HlsSol(Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> P_ad,
                     Eigen::MatrixXd& residuals, Eigen::MatrixXd& derivatives) const {
-            {  // Approximately solve the problem and reduce outlier weights
-                for (int i = 0; i < P_ad.rows(); ++i) {
-                    if (P_ad(i, 0) < 0) P_ad.row(i) = -P_ad.row(i).eval();
-                }
-                auto t = P_ad.colwise().sum().normalized().eval();
-
-                auto residual_val = (P_ad * t).cwiseAbs().array().eval();
-
-                // auto median = softmedian(residual_val, 1);
-                // std::cout << median << std::endl;
-
-                auto thresh = residual_val.mean();
-                ;
-                auto radius = softmax(residual_val, 100) - thresh;
-
-                // std::cout << radius << std::endl;
-
-                for (int i = 0; i < P_ad.rows(); ++i) {
-                    ScalarT x = (thresh - residual_val(i, 0)) / radius * 5;
-                    P_ad.row(i) *= 1. / (1. + exp(-x));
-                }
-            }
-
-            // {
-            //     auto t = P_ad.colwise().sum().normalized().eval();
-            //     auto res = (P_ad * t).eval();
-            //     residuals.resize(P_ad.rows(), 1);
-            //     derivatives.resize(P_ad.rows(), res(0,0).derivatives().rows());
-            //     for (int j = 0; j < P_ad.rows(); ++j) {
-            //         residuals(j,0) = res(j,0).value();
-            //         for (int i = 0; i < res(j,0).derivatives().rows(); ++i) {
-            //             derivatives(j,i) = res(j,0).derivatives()(i,0);
-            //         }
-            //     }
-            //     return;
-            // }
-
-            /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
             Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
             for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
+
+            { /* https://hal.inria.fr/inria-00074015/document */
+                Eigen::Matrix<double, -1, 1> weights(P.rows(), 1);
+                weights.setOnes();
+                for (int i = 0; i < 10; ++i) {
+                    auto svd = (P.array().colwise() * weights.array())
+                                   .matrix()
+                                   .jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
+                    auto V = svd.matrixV().eval();
+                    auto t = V.col(V.cols() - 1).eval();
+                    auto residuals = (P * t).array().eval();
+                    weights = 1 / (1. + 100 * residuals.cwiseAbs());
+                }
+                P = (P.array().colwise() * weights.array());
+            }
+
+            /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
             auto svd = P.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
 
             auto U = svd.matrixU().eval();
@@ -225,6 +184,8 @@ class FineSyncImpl : public IFineSync {
             // clang-format on
 
             auto t = V.col(V.cols() - 1).eval();
+
+            for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
             residuals = P * t;
 
             const int n_der = P_ad(0, 0).derivatives().rows();
@@ -263,6 +224,9 @@ class FineSyncImpl : public IFineSync {
 
     double Run(double initial_offset, Eigen::Vector3d bias, double search_radius,
                double search_step, int start_frame, int end_frame) override {
+        initial_offset *= 1000;
+        bias *= gyro_loader_->SampleRate();
+
         ceres::Problem problem;
         double ou = 0;
         Eigen::Vector3d align;
@@ -290,35 +254,12 @@ class FineSyncImpl : public IFineSync {
         options.minimizer_progress_to_stdout = true;
         options.max_num_iterations = 200;
         options.parameter_tolerance = 1e-5;
-        options.max_trust_region_radius = 1e-3;
-        options.initial_trust_region_radius = 8e-4;
-        options.inner_iteration_tolerance = 1e-6;
+        options.max_trust_region_radius = 1e-2;
+        options.initial_trust_region_radius = 5e-3;
         options.use_inner_iterations = true;
         options.use_nonmonotonic_steps = true;
-
-        // options.minimizer_type = ceres::LINE_SEARCH;
-        // options.minimizer_progress_to_stdout = true;
-        // options.use_nonmonotonic_steps = true;
-        // options.min_line_search_step_size = 1e-12;
-        // options.line_search_type = ceres::ARMIJO;
-        options.line_search_direction_type = ceres::NONLINEAR_CONJUGATE_GRADIENT;
-
-
-        struct Cb : public ceres::IterationCallback {
-            virtual ceres::CallbackReturnType operator()(
-                const ceres::IterationSummary& summary) override {
-                if (summary.step_is_successful) {
-                    std::unique_lock<std::mutex> lock(m);
-                    ou[0] = std::min(1., ou[0] + .1);
-                }
-                return ceres::SOLVER_CONTINUE;
-            };
-            double* ou;
-            std::mutex m;
-        } cb;
-
-        cb.ou = &ou;
-        options.callbacks.push_back(&cb);
+        // options.check_gradients = true;
+        // options.gradient_check_numeric_derivative_relative_step_size = 1e-8;
 
         options.num_threads = 8;
         ceres::Solver::Summary summary;
@@ -328,12 +269,13 @@ class FineSyncImpl : public IFineSync {
         std::cout << "Pre-Sync: " << initial_offset << "  " << bias.transpose() * 180 / M_PI * 200
                   << " | " << align.transpose() * 180 / M_PI << std::endl;
 
-        // ou = 1;
+        ou = 1;
 
-        // ceres::Solve(options, &problem, &summary);
-        // std::cout << summary.FullReport() << "\n";
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.FullReport() << "\n";
 
-        // std::cout << "Sync: " << initial_offset << "  " << bias.transpose() << std::endl;
+        std::cout << "Sync: " << initial_offset << "  " << bias.transpose() * 180 / M_PI * 200
+                  << " | " << align.transpose() * 180 / M_PI << std::endl;
 
         return initial_offset;
     }

@@ -99,9 +99,9 @@ struct GyroIntegrator {
             CubicHermiteSpline<3, DiffT>(p0, p1, p2, p3, t2 - static_cast<double>(n2), sum2.data(),
                                          dsum2.data());
         }
-        const RotT sum1aa = AngleAxisToQuaternion(sum1);
+        const RotT sum1aa = AngleAxisToQuaternion((-sum1).eval());
         const RotT sum2aa = AngleAxisToQuaternion(sum2);
-        auto sumaa = RotT{sum1aa.inverse() * sum2aa};
+        auto sumaa = RotT{sum1aa * sum2aa};
 
         return GyroThunk{QuaternionToAngleAxis(sumaa), dsum1, dsum2};
     }

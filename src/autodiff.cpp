@@ -2,49 +2,117 @@
 
 #include <Eigen/Eigen>
 
+#include <ceres/ceres.h>
+#include <ceres/tiny_solver.h>
+#include <unsupported/Eigen/src/AutoDiff/AutoDiffScalar.h>
+
 using std::cout;
 
-template <class M>
-M softargmax(const M& a, double k = 1) {
-    return ((k * a).exp() / (k * a).exp().sum());
-}
+struct HomogenousLeastSquaresCost {
+    typedef double Scalar;
+    using ad = Eigen::AutoDiffScalar<Eigen::Matrix<double, -1, 1>>;
 
-template <class M>
-auto softmax(const M& a, double k = 1) {
-    return (a * softargmax(a, k)).sum();
-}
+    enum {
+        NUM_RESIDUALS = Eigen::Dynamic,
+        NUM_PARAMETERS = Eigen::Dynamic,
+    };
 
-template <class M>
-M softabs(const M& a, double k = 1) {
-    return (a * (k * a).exp() - a * (k * -a).exp()) / ((k * a).exp() + (k * -a).exp());
-}
+    HomogenousLeastSquaresCost(const Eigen::MatrixXd& problem) {
+        problem_.resize(problem.rows(), problem.cols());
+        for (int i = 0; i < problem.rows() * problem.cols(); ++i) {
+            problem_.data()[i].value() = problem.data()[i];
+            problem_.data()[i].derivatives().resize(problem.cols(), 1);
+            problem_.data()[i].derivatives().setZero();
+        }
+    }
 
-template <class M>
-M softargmedian(const M& a, double k = 1) {
-    auto rep = a.replicate(1, a.rows()).eval();
-    return softargmax((-softabs((rep.transpose() - rep).eval(), k).rowwise().sum()).eval(), k);
-}
+    bool operator()(const double* parameters_, double* residuals_, double* jacobian_) const {
+        Eigen::Matrix<ad, -1, -1> parameters(problem_.cols(), 1);
+        Eigen::Map<Eigen::Matrix<double, -1, -1>> residuals(residuals_, problem_.rows(), 1);
 
-template <class M>
-auto softmedian(const M& a, double k = 1) {
-    return (a * softargmedian(a, k)).sum();
-}
+        for (int i = 0; i < problem_.cols(); ++i) {
+            parameters(i, 0).value() = parameters_[i];
+            parameters(i, 0).derivatives().resize(problem_.cols(), 1);
+            parameters(i, 0).derivatives().setZero();
+            parameters(i, 0).derivatives()(i, 0) = 1;
+        }
+
+        parameters /= parameters.norm();
+
+        auto result = (problem_ * parameters).eval();
+        result = result.array() / (ad(1.) + result.cwiseAbs().array());
+
+        for (int i = 0; i < problem_.rows(); ++i) {
+            residuals(i, 0) = result(i, 0).value();
+        }
+
+        if (jacobian_) {
+            Eigen::Map<Eigen::Matrix<double, -1, -1, Eigen::ColMajor>> jacobian(
+                jacobian_, problem_.rows(), problem_.cols());
+            for (int i = 0; i < problem_.rows(); ++i) {
+                jacobian.row(i) = result(i, 0).derivatives();
+            }
+        }
+
+        return true;
+    }
+
+    int NumResiduals() const { return problem_.rows(); }
+
+    int NumParameters() const { return problem_.cols(); }
+
+   private:
+    Eigen::Matrix<ad, -1, -1> problem_;
+};
 
 int main() {
-    Eigen::Array<double, 8, 1> a;
-    a << 2, 5, 8, 5, 5, 9, 1, 2;
+    Eigen::MatrixXd P(200, 3);
+    Eigen::VectorXd t(3);
+    t.setRandom();
+    t.normalize();
+    // P.setRandom();
+    for (int i = 0; i < P.rows(); ++i) {
+        P.row(i) << 1,1,0;
+        P.row(i) += Eigen::Vector3d::Random() * .1;
+    }
+    P.row(0) << 1000, 0, 0;
+    P.row(1) << 0, 1000, 0;
+    P.row(2) << 0, 0, 1000;
+    P.row(3) << 0, 0, 10000;
+    P.row(4) << 10000, -10000, 0;
+    HomogenousLeastSquaresCost f(P);
+    ceres::TinySolver<HomogenousLeastSquaresCost> solver;
+    solver.options.max_num_iterations = 500;
 
-    a/=100;
+    solver.Solve(f, &t);
+    std::cout << solver.summary.iterations << " " << solver.summary.initial_cost << " "
+              << solver.summary.final_cost << " " << solver.summary.status << " | "
+              << t.normalized().transpose() << std::endl;
 
-    std::cout << a.transpose() << std::endl;
+    Eigen::Matrix<double,-1,1> weights(P.rows(), 1);
+    weights.setOnes();
+    for (int i = 0; i < 10; ++i) {
+        auto svd = (P.array().colwise() * weights.array()).matrix().jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
+        auto V = svd.matrixV().eval();
+        t = V.col(V.cols() - 1).eval();
+        auto residuals = (P * t).array().eval();
+        weights = 1 / (1. + residuals.cwiseAbs());
+        std::cout << t.transpose() << std::endl;
+    }
 
-    // Softmax
+    solver.Solve(f, &t);
+    std::cout << solver.summary.iterations << " " << solver.summary.initial_cost << " "
+              << solver.summary.final_cost << " " << solver.summary.status << " | "
+              << t.normalized().transpose() << std::endl;
 
-    double k = 1;
-    std::cout << softmedian(a) << std::endl;
-
-    std::sort(a.data(), a.data() + 8);
-    std::cout << a.transpose() << std::endl;
+    // for (int i = 0; i < 1000; ++i) {
+    //     t.setRandom();
+    //     t.normalize();
+    //     solver.Solve(f, &t);
+    //     std::cout << solver.summary.iterations << " " << solver.summary.initial_cost << " "
+    //               << solver.summary.final_cost << " " << solver.summary.status << " | "
+    //               << t.normalized().transpose() << std::endl;
+    // }
 
     return 0;
 }
