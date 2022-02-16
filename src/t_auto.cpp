@@ -41,7 +41,8 @@ int main(int args, char** argv) {
 
     // RegisterFrameLoader(ctx, kFrameLoaderName, "DropMeFiles_tRyrZ/out-rs.mp4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
-    RegisterFrameLoader(ctx, kFrameLoaderName, "GH011230.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "GH011230.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "grommi/GX011338.MP4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
@@ -49,12 +50,14 @@ int main(int args, char** argv) {
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GH011230.MP4.json");
-    // RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GoPro_Hero6_2160p_16by9_wide.json");
+    // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
+    // "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
     RegisterVisualizer(ctx, kVisualizerName);
     // RegisterGyroLoader(ctx, kGyroLoaderName,
     // "DropMeFiles_tRyrZ/attic_without_fog_2_76_01_v2.csv");
-    RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "grommi/GX011338.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA.bbl.csv");
@@ -66,7 +69,7 @@ int main(int args, char** argv) {
 
     ctx->ContextLoaded();
 
-    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
+    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34*2);
     // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.416);
 
     auto gyro_loader = ctx->GetComponent<IGyroLoader>(kGyroLoaderName);
@@ -80,12 +83,20 @@ int main(int args, char** argv) {
 
     for (auto sync_point : sync_points) {
         sync_point /= gyro_loader->SampleRate();
-        int start = sync_point * 50 - 60;
-        int end = sync_point * 50 + 60;
+        int start = sync_point * 60 - 60;
+        int end = sync_point * 60 + 60;
         std::cout << "Sync point: " << sync_point << std::endl;
         for (int frame = start; frame < end; ++frame) {
             std::cout << frame << std::endl;
             ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(frame);
+
+            cv::Mat img;
+            ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(frame + 1, img);
+            img = img.clone();
+            ctx->GetComponent<IVisualizer>(kVisualizerName)->DimImage(img, .4);
+            ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatched(img, frame, false);
+            ctx->GetComponent<IVisualizer>(kVisualizerName)->OverlayMatchedTracks(img, frame);
+            cv::imwrite("out" + std::to_string(frame) + ".jpg", img);
         }
 
         // First rough sync

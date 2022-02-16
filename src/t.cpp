@@ -40,14 +40,18 @@ int main(int args, char** argv) {
 
     // RegisterFrameLoader(ctx, kFrameLoaderName, "DropMeFiles_tRyrZ/out-rs.mp4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "000458AA.MP4");
-    RegisterFrameLoader(ctx, kFrameLoaderName, "GH011230.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "GH011230.MP4");
+    RegisterFrameLoader(ctx, kFrameLoaderName, "grommi/GX011338.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "grommi/GX011338.downscaled.MP4");
     // RegisterFrameLoader(ctx, kFrameLoaderName, "GX019642.MP4");
+    // RegisterFrameLoader(ctx, kFrameLoaderName, "grommi/GH011221.MP4");
     RegisterUuidGen(ctx, kUuidGenName);
     RegisterPairStorage(ctx, kPairStorageName);
     RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GH011230.MP4.json");
+    // RegisterCalibrationProvider(ctx, kCalibrationProviderName, "grommi/downscaled.json");
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "GoPro_Hero6_2160p_16by9_wide.json");
     RegisterPoseEstimator(ctx, kPoseEstimatorName);
@@ -56,7 +60,9 @@ int main(int args, char** argv) {
     RegisterCorrelator(ctx, kCorrelatorName);
     // RegisterGyroLoader(ctx, kGyroLoaderName,
     // "DropMeFiles_tRyrZ/attic_without_fog_2_76_01_v2.csv");
-    RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "GH011230.MP4.csv");
+    RegisterGyroLoader(ctx, kGyroLoaderName, "grommi/GX011338.MP4.csv");
+    // RegisterGyroLoader(ctx, kGyroLoaderName, "grommi/GH011221.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "GX019642.MP4.csv");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA_fixed.CSV");
     // RegisterGyroLoader(ctx, kGyroLoaderName, "000458AA.bbl.csv");
@@ -69,20 +75,23 @@ int main(int args, char** argv) {
 
     ctx->ContextLoaded();
 
-    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34);
+    ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.34 * 2);
     // ctx->GetComponent<ICalibrationProvider>(kCalibrationProviderName)->SetRsCoefficent(0.416);
 
     // int pos = 45;
     // int pos = 129;
-    double pos = 2;
+    double pos = 12;
     // double pos = 88*2;
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 30 * 28; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30 * 4; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
+
+        // ctx->GetComponent<ICorrelator>(kCorrelatorName)->RefineOF(i);
+
 
         // cv::Mat img;
         // ctx->GetComponent<IFrameLoader>(kFrameLoaderName)->GetFrame(i + 1, img);
@@ -99,9 +108,10 @@ int main(int args, char** argv) {
     RoughCorrelationReport rough_correlation_report, rep;
     std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
-        ->Run(0, 1, 1e-2, -100000, 100000, &rough_correlation_report);
-    // int start = 30 * pos;
-    for (int start = 30 * pos; start < 30 * pos + 30 * 26; start += 30) {
+        ->Run(0, 2, 1e-2, -100000, 100000, &rough_correlation_report);
+    int start = 30 * pos;
+    // for (int start = 30 * pos; start < 30 * pos + 30 * 50; start += 30) {
+    {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
@@ -109,9 +119,9 @@ int main(int args, char** argv) {
         {
             Stopwatch s("Sync");
             auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                            ->Run(rep.offset, rep.bias_estimate, start, start + 120);
+                            ->Run(rep.offset, rep.bias_estimate, start, start + 240);
 
-            out << start << "," << sync << std::endl;
+            out << start << "," << sync << "," << rep.offset * 1000 << std::endl;
         }
     }
 

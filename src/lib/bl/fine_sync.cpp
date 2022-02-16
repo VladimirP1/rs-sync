@@ -151,25 +151,26 @@ class FineSyncImpl : public IFineSync {
             Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
             for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
 
+            Eigen::Matrix<double, -1, 1> weights(P.rows(), 1);
+            weights.setOnes();
             { /* https://hal.inria.fr/inria-00074015/document */
-                Eigen::Matrix<double, -1, 1> weights(P.rows(), 1);
-                weights.setOnes();
-                for (int i = 0; i < 10; ++i) {
-                    auto svd = (P.array().colwise() * weights.array())
-                                   .matrix()
-                                   .jacobiSvd(Eigen::ComputeFullV);
-                    auto V = svd.matrixV().eval();
-                    auto t = V.col(V.cols() - 1).eval();
-                    auto residuals = (P * t).array().eval();
-                    Eigen::Matrix<double, -1, 1> new_weights =
-                        1 / (1. + 100 * residuals.cwiseAbs());
-                    if ((weights - new_weights).norm() < 1e-8) {
-                        weights = new_weights;
-                        break;
-                    }
-                    weights = new_weights;
-                }
-                P = (P.array().colwise() * weights.array());
+                // for (int i = 0; i < 10; ++i) {
+                //     auto svd = (P.array().colwise() * weights.array())
+                //                    .matrix()
+                //                    .jacobiSvd(Eigen::ComputeFullV);
+                //     auto V = svd.matrixV().eval();
+                //     auto t = V.col(V.cols() - 1).eval();
+                //     auto residuals = (P * t).array().eval();
+                //     Eigen::Matrix<double, -1, 1> new_weights =
+                //         1 / (1. + 100 * residuals.cwiseAbs());
+                //     // if ((weights - new_weights).norm() < 1e-9) {
+                //     //     weights = new_weights;
+                //     //     break;
+                //     // }
+                //     weights = new_weights;
+                // }
+                // weights.normalize();
+                // P = (P.array().colwise() * weights.array());
             }
 
             /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
@@ -200,6 +201,7 @@ class FineSyncImpl : public IFineSync {
                 Eigen::MatrixXd dP(P.rows(), P.cols());
                 for (int j = 0; j < dP.rows() * dP.cols(); ++j)
                     dP.data()[j] = P_ad.data()[j].derivatives()(i, 0);
+                dP = (dP.array().colwise() * weights.array());
 
                 // clang-format off
                 auto dV = 
@@ -228,7 +230,27 @@ class FineSyncImpl : public IFineSync {
         PairDescription desc_;
     };
 
-    double Run(double initial_offset, Eigen::Vector3d bias, int start_frame, int end_frame) override {
+    double Run2(double initial_offset, Eigen::Vector3d bias, int start_frame,
+                int end_frame) override {
+        std::ofstream out("sync2.csv");
+        double ou = 1;
+        FrameCostFunction2 cost(this, start_frame, &ou);
+        Eigen::Vector3d align = {0, 0, 0};
+        double* params[3];
+        for (double offset = initial_offset * 1000 - 50; offset < initial_offset * 1000 + 50;
+             offset += .01) {
+            params[0] = &offset;
+            params[1] = bias.data();
+            params[2] = align.data();
+            Eigen::Matrix<double, -1, 1> res(cost.num_residuals(), 1);
+            cost.Evaluate(params, res.data(), nullptr);
+            out << offset << "," << res.norm() << std::endl;
+        }
+        return 0;
+    }
+
+    double Run(double initial_offset, Eigen::Vector3d bias, int start_frame,
+               int end_frame) override {
         initial_offset *= 1000;
         bias *= gyro_loader_->SampleRate();
 
@@ -248,8 +270,9 @@ class FineSyncImpl : public IFineSync {
                 continue;
             }
 
-            problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou), nullptr,
-                                     &initial_offset, bias.data(), align.data());
+            problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou),
+                                     new ceres::CauchyLoss(.01), &initial_offset, bias.data(),
+                                     align.data());
         }
 
         std::cout << "Before sync: " << initial_offset << "  " << bias.transpose() << std::endl;
@@ -259,8 +282,8 @@ class FineSyncImpl : public IFineSync {
         options.minimizer_progress_to_stdout = true;
         options.max_num_iterations = 200;
         options.parameter_tolerance = 1e-5;
-        options.max_trust_region_radius = 1e-2;
-        options.initial_trust_region_radius = 5e-3;
+        options.max_trust_region_radius = 1e-3;
+        options.initial_trust_region_radius = 5e-4;
         options.use_inner_iterations = true;
         options.use_nonmonotonic_steps = true;
         // options.check_gradients = true;
