@@ -40,6 +40,12 @@ install(TARGETS t)
 
 # -----
 
+add_executable(ta t_auto.cpp)
+target_link_libraries(ta libds libbl)
+install(TARGETS ta)
+
+# -----
+
 add_executable(sync_many_points sync_many_points.cpp)
 target_link_libraries(sync_many_points libds libbl)
 install(TARGETS sync_many_points)

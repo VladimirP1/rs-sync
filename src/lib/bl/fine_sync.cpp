@@ -157,11 +157,17 @@ class FineSyncImpl : public IFineSync {
                 for (int i = 0; i < 10; ++i) {
                     auto svd = (P.array().colwise() * weights.array())
                                    .matrix()
-                                   .jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
+                                   .jacobiSvd(Eigen::ComputeFullV);
                     auto V = svd.matrixV().eval();
                     auto t = V.col(V.cols() - 1).eval();
                     auto residuals = (P * t).array().eval();
-                    weights = 1 / (1. + 100 * residuals.cwiseAbs());
+                    Eigen::Matrix<double, -1, 1> new_weights =
+                        1 / (1. + 100 * residuals.cwiseAbs());
+                    if ((weights - new_weights).norm() < 1e-8) {
+                        weights = new_weights;
+                        break;
+                    }
+                    weights = new_weights;
                 }
                 P = (P.array().colwise() * weights.array());
             }
@@ -222,8 +228,7 @@ class FineSyncImpl : public IFineSync {
         PairDescription desc_;
     };
 
-    double Run(double initial_offset, Eigen::Vector3d bias, double search_radius,
-               double search_step, int start_frame, int end_frame) override {
+    double Run(double initial_offset, Eigen::Vector3d bias, int start_frame, int end_frame) override {
         initial_offset *= 1000;
         bias *= gyro_loader_->SampleRate();
 

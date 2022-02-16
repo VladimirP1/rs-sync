@@ -205,3 +205,66 @@ inline void DecimateGyro(Eigen::Vector3d* samples, int length, int divider) {
         samples[i] = samples[i * divider];
     }
 }
+
+inline void Convolve(double* data, double* kernel, int nsamples, int ndim, int ksize) {
+    std::vector<double> newdata(ndim * nsamples);
+    for (int dim = 0; dim < ndim; ++dim) {
+        for (int i = 0; i < nsamples; ++i) {
+            for (int j = std::max(0, i - ksize / 2); j < std::min(nsamples, i + ksize / 2); ++j) {
+                newdata[ndim * i + dim] += data[ndim * j + dim] * kernel[ksize / 2 + j - i];
+            }
+        }
+    }
+    std::copy(newdata.begin(), newdata.end(), data);
+}
+
+inline void MakeGaussianKernel(double* kernel, int ksize, double sigma) {
+    for (int i = 0; i < ksize; ++i) {
+        double x = i - static_cast<int>(ksize / 2);
+        kernel[i] = exp(-x * x / (sigma * sigma) / 2) / sigma / sqrt(2 * M_PI);
+    }
+}
+
+inline void NonMaxSupress(double* data, int nsamples, int ndim, int radius) {
+    std::vector<double> newdata(ndim * nsamples);
+    for (int dim = 0; dim < ndim; ++dim) {
+        for (int i = 0; i < nsamples; ++i) {
+            double cur = data[ndim * i + dim];
+            newdata[ndim * i + dim] = cur;
+            for (int j = std::max(0, i - radius); j < std::min(nsamples, i + radius); ++j) {
+                if (data[ndim * j + dim] > cur) {
+                    newdata[ndim * i + dim] = 0;
+                }
+            }
+        }
+    }
+    std::copy(newdata.begin(), newdata.end(), data);
+}
+
+inline std::vector<int> SuggestSyncPoints(double* data, int nsamples, int lpf1=20, int lpf2=100, int radius=5000) {
+    std::vector<int> sync_pts;
+
+    LowpassGyro(reinterpret_cast<Eigen::Vector3d*>(data), nsamples, lpf1);
+
+    double sobel[3] = {-1, 0, 1};
+    Convolve(data, sobel, nsamples, 3, 3);
+
+    LowpassGyro(reinterpret_cast<Eigen::Vector3d*>(data), nsamples, lpf2);
+
+    std::vector<double> sync_qual;
+    for (int i = 0; i < nsamples; ++i) {
+        Eigen::Vector3d rv;
+        rv << data[3 * i], data[3 * i + 1], data[3 * i + 2];
+        sync_qual.push_back(rv.x() * rv.y() + rv.y() * rv.z() + rv.z() * rv.x());
+    }
+
+    NonMaxSupress(sync_qual.data(), sync_qual.size(), 1, radius);
+
+    for (int i = 0; i < sync_qual.size(); ++i) {
+        if (sync_qual[i] > 0) {
+            sync_pts.push_back(i);
+        }
+    }
+
+    return sync_pts;
+}
