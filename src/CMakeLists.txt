@@ -66,5 +66,10 @@ add_executable(normal_fit normal_fit.cpp)
 target_link_libraries(normal_fit  opencv::opencv)
 install(TARGETS normal_fit)
 
+# -----
+add_executable(main main.cpp)
+target_link_libraries(main  opencv::opencv)
+install(TARGETS main)
+
 # tests
 add_subdirectory(test)

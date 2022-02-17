@@ -32,6 +32,7 @@ set( LIBBL_SOURCES
     bl/context.cpp 
     bl/utils.cpp
     bl/optical_flow.cpp 
+    bl/dense_optical_flow.cpp 
     bl/pair_storage.cpp 
     bl/pose_estimator.cpp 
     bl/calibration_provider.cpp 
