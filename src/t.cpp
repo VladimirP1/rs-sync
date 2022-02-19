@@ -82,12 +82,12 @@ int main(int args, char** argv) {
 
     // int pos = 45;
     // int pos = 129;
-    double pos = 3;
+    double pos = 9;
     // double pos = 88*2;
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 30*53; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30*1; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
@@ -112,9 +112,9 @@ int main(int args, char** argv) {
     std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 2, 1e-2, -100000, 100000, &rough_correlation_report);
-    // int start = 30 * pos;
-    // {
-    for (int start = 30 * pos; start < 30 * pos + 30 * 50; start += 30) {
+    int start = 30 * pos;
+    {
+    // for (int start = 30 * pos; start < 30 * pos + 30 * 50; start += 30) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
@@ -122,7 +122,7 @@ int main(int args, char** argv) {
         {
             Stopwatch s("Sync");
             auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                            ->Run(rep.offset, {0,0,0}, start, start + 240);
+                            ->Run2(rep.offset, {0,0,0}, start, start + 30);
 
             out << start << "," << sync << "," << rep.offset * 1000 << std::endl;
         }

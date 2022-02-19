@@ -11,11 +11,11 @@ import matplotlib
 # right = np.searchsorted(exp.values[:,0], (7140+50)/50*1000)
 # print(left,right)
 
-csv = pd.read_csv("sync.csv", header=None)
+csv = pd.read_csv("sync2.csv", header=None)
 print(csv.values.shape)
 
-# fig, ax1 = plt.subplots()
-# ax2 = ax1.twiny().twinx()
+fig, ax1 = plt.subplots()
+ax2 = ax1.twiny().twinx()
 # ax1.set_ylim(-.04,-.025)
 # ax2.set_ylim(.009,.004)
 # ax1.set_xlim(1100, 7140)
@@ -25,12 +25,12 @@ print(csv.values.shape)
 # vs = csv.values[csv.values[:,1] < -35]
 # vs = vs[vs[:,1] > -50]
 # plt.plot(vs[:,0], vs[:,1], color='red')
-plt.plot(csv.values[:,0], csv.values[:,1], color='red')
+ax1.plot(csv.values[:,0], csv.values[:,1], color='red')
 
 # csv.values[:,:][csv.values[:,2] < 0] = -csv.values[:,:][csv.values[:,2] < 0]
 # plt.plot(csv.values[:,2], color='red')
 # print(np.sum(csv.values[:,2]))
-# ax2.plot(csv.values[:,0], csv.values[:,2], color='blue')
+ax2.plot(csv.values[:,0], csv.values[:,2], color='blue', alpha=.2)
 # plt.plot(csv.values[:,0]/60, csv.values[:,2], color='blue')
 # ax2.plot(exp.values[left:right,0], exp.values[left:right,2])
 # plt.xlabel("sync point position (seconds)")

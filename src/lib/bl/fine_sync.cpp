@@ -13,6 +13,7 @@
 #include <cmath>
 #include <iostream>
 #include <iomanip>
+#include <random>
 
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/calib3d.hpp>
@@ -22,6 +23,11 @@
 using Eigen::Matrix;
 
 namespace rssync {
+
+unsigned long int rnext(unsigned long int seed) {
+    return seed = seed * 1103515245 + 12345;
+}
+
 class FineSyncImpl : public IFineSync {
    public:
     void ContextLoaded(std::weak_ptr<BaseComponent> self) override {
@@ -179,18 +185,22 @@ class FineSyncImpl : public IFineSync {
             { /* https://hal.inria.fr/inria-00074015/document */
 
                 Eigen::Vector3d best_sol;
+                unsigned long int rnd = rnext(P_ad.rows());
                 double least_med = std::numeric_limits<double>::infinity();
-                srand(12);
+                std::mt19937 gen;
+                std::normal_distribution<double> normal;
                 for (int i = 0; i < 200; ++i) {
                     int vs[3];
-                    vs[0] = vs[1] = rand() % P.rows();
-                    while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % P.rows();
-                    while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % P.rows();
+                    vs[0] = vs[1] = (rnd = rnext(rnd)) % P.rows();
+                    while (vs[1] == vs[0]) vs[2] = vs[1] = (rnd = rnext(rnd)) % P.rows();
+                    while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = (rnd = rnext(rnd)) % P.rows();
 
                     auto v = (Eigen::Vector3d{P.row(vs[0]) - P.row(vs[1])})
                                  .cross(Eigen::Vector3d{P.row(vs[0]) - P.row(vs[2])})
                                  .normalized()
                                  .eval();
+                    
+                    // auto v = Eigen::Vector3d{normal(gen), normal(gen), normal(gen)}.normalized().eval();
                     auto residuals = (P * v).array().eval();
                     auto residuals2 = (residuals * residuals).eval();
 
@@ -206,13 +216,13 @@ class FineSyncImpl : public IFineSync {
                 // std::cout << best_sol.transpose() << std::endl;
                 // -------------------------------
                 auto residuals = (P * best_sol).array().eval();
-                auto k = 1e1;
+                auto k = 1e2;
                 weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+                // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
                 // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
 
-
                 // -------------------------------
-                for (int i = 0; i < 10; ++i) {
+                for (int i = 0; i < 50; ++i) {
                     auto svd = (P.array().colwise() * weights.array())
                                    .matrix()
                                    .jacobiSvd(Eigen::ComputeFullV);
@@ -220,10 +230,9 @@ class FineSyncImpl : public IFineSync {
                     residuals = (P * V.col(V.cols() - 1)).array().eval();
 
                     weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+                    // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
                     // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
                 }
-
-                // weights *= residuals.matrix().norm();
 
                 for (int i = 0; i < P_ad.rows(); ++i)
                     for (int j = 0; j < P_ad.cols(); ++j) P_ad(i, j) *= weights(i, 0);
@@ -248,54 +257,6 @@ class FineSyncImpl : public IFineSync {
                     derivatives(i, j) = S(S.rows() - 1, 0).derivatives()(j, 0);
                 }
             }
-
-            /* For explanation, see: https://j-towns.github.io/papers/svd-derivative.pdf */
-            /*auto svd = P.bdcSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
-
-            auto U = svd.matrixU().eval();
-            auto S = svd.singularValues().eval();
-            auto V = svd.matrixV().eval();
-            auto S2 = S.cwiseProduct(S).eval();
-            // clang-format off
-            auto F =
-                (1. /
-                    (
-                        S2.transpose().replicate(S2.rows(), 1) - S2.replicate(1, S2.rows())
-                    ).array()
-                ).matrix().eval();
-            F.diagonal().setZero();
-            // clang-format on
-
-            auto t = V.col(V.cols() - 1).eval();
-
-            for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
-            residuals = P * t;
-
-            const int n_der = P_ad(0, 0).derivatives().rows();
-            derivatives.resize(residuals.rows(), n_der);
-            for (int i = 0; i < n_der; ++i) {
-                Eigen::MatrixXd dP(P.rows(), P.cols());
-                for (int j = 0; j < dP.rows() * dP.cols(); ++j)
-                    dP.data()[j] = P_ad.data()[j].derivatives()(i, 0);
-                dP = (dP.array().colwise() * weights.array());
-
-                // clang-format off
-                auto dV =
-                    V * (
-                            (
-                                F.array() * (
-                                    S.asDiagonal() * U.transpose() * dP * V
-                                    + V.transpose() * dP.transpose() * U * S.asDiagonal()
-                                ).array()
-                            ).matrix()
-                            + (Eigen::MatrixXd::Identity(P.cols(), P.cols()) - V * V.transpose())
-                                * dP.transpose() * U * S.asDiagonal().inverse()
-                        );
-                // clang-format on
-
-                auto dt = dV.col(dV.cols() - 1).eval();
-                derivatives.col(i) = dP * t + P * dt;
-            }*/
         }
 
        private:
@@ -328,8 +289,8 @@ class FineSyncImpl : public IFineSync {
         Eigen::Vector3d align = {0, 0, 0};
         double* params[3];
         double* jac[3] = {0, 0, 0};
-        for (double offset = initial_offset * 1000 - 50; offset < initial_offset * 1000 + 50;
-             offset += .25) {
+        for (double offset = initial_offset * 1000 - 1; offset < initial_offset * 1000 + 1;
+             offset += .005) {
             params[0] = &offset;
             params[1] = bias.data();
             params[2] = align.data();
@@ -342,7 +303,20 @@ class FineSyncImpl : public IFineSync {
                 cst += res.norm();
                 dcst += jac_t.sum();
             }
-            out << offset << "," << cst << "," << dcst << std::endl;
+            double o2 = offset + 1e-5;
+            params[0] = &o2;
+            params[1] = bias.data();
+            params[2] = align.data();
+            auto old_cst = cst;
+            cst = 0;
+            for (auto& cf : costs) {
+                Eigen::Matrix<double, -1, 1> res(cf->num_residuals(), 1);
+                Eigen::Matrix<double, -1, 1> jac_t(cf->num_residuals(), 1);
+                jac[0] = jac_t.data();
+                cf->Evaluate(params, res.data(), jac);
+                cst += res.norm();
+            }
+            out << offset << "," << old_cst << "," << dcst << "," << (cst - old_cst) << std::endl;
         }
         // Eigen::Vector3d align = {0, 0, 0};
         // double* params[3];
@@ -388,9 +362,8 @@ class FineSyncImpl : public IFineSync {
                 continue;
             }
 
-            problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou),
-                                     nullptr, &initial_offset, bias.data(),
-                                     align.data());
+            problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou), nullptr,
+                                     &initial_offset, bias.data(), align.data());
         }
 
         // problem.AddResidualBlock(new ceres::AutoDiffCostFunction<RegularizationResidual,3,3>(new
@@ -404,8 +377,8 @@ class FineSyncImpl : public IFineSync {
         // options.parameter_tolerance = 1e-5;
         options.max_trust_region_radius = 1e-3;
         options.initial_trust_region_radius = 5e-4;
-        options.use_inner_iterations = true;
-        // options.use_nonmonotonic_steps = true;
+        // options.use_inner_iterations = true;
+        options.use_nonmonotonic_steps = true;
         // options.check_gradients = true;
         // options.gradient_check_numeric_derivative_relative_step_size = 1e-8;
 
