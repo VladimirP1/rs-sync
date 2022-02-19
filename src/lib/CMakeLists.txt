@@ -33,6 +33,7 @@ set( LIBBL_SOURCES
     bl/utils.cpp
     bl/optical_flow.cpp 
     bl/dense_optical_flow.cpp 
+    bl/stupid_optical_flow.cpp 
     bl/pair_storage.cpp 
     bl/pose_estimator.cpp 
     bl/calibration_provider.cpp 
@@ -45,7 +46,8 @@ set( LIBBL_SOURCES
     bl/fine_sync.cpp
 )
 
+
 add_library(libbl ${LIBBL_SOURCES})
 target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(libbl PUBLIC libds libvision libmath optim Ceres::ceres)
+target_link_libraries(libbl PUBLIC libds libvision libmath optim Eigen3::Eigen Ceres::ceres)
 install(TARGETS libbl)

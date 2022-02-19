@@ -7,6 +7,7 @@
 #include <bl/utils.hpp>
 #include <bl/optical_flow.hpp>
 #include <bl/dense_optical_flow.hpp>
+#include <bl/stupid_optical_flow.hpp>
 #include <bl/pair_storage.hpp>
 #include <bl/calibration_provider.hpp>
 #include <bl/pose_estimator.hpp>
@@ -50,6 +51,7 @@ int main(int args, char** argv) {
     RegisterPairStorage(ctx, kPairStorageName);
     // RegisterOpticalFlowLK(ctx, kOpticalFlowName);
     RegisterOpticalFlowDense(ctx, kOpticalFlowName);
+    // RegisterOpticalFlowStupid(ctx, kOpticalFlowName);
     // RegisterCalibrationProvider(ctx, kCalibrationProviderName,
     // "hawkeye_firefly_x_lite_4k_43_v2.json");
     RegisterCalibrationProvider(ctx, kCalibrationProviderName, "GH011230.MP4.json");
@@ -82,12 +84,12 @@ int main(int args, char** argv) {
 
     // int pos = 45;
     // int pos = 129;
-    double pos = 9;
+    double pos = 3;
     // double pos = 88*2;
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 90*1; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 30*53; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
@@ -112,9 +114,9 @@ int main(int args, char** argv) {
     std::ofstream out("sync.csv");
     ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
         ->Run(0, 2, 1e-2, -100000, 100000, &rough_correlation_report);
-    int start = 30 * pos;
-    {
-    // for (int start = 30 * pos; start < 30 * pos + 30 * 50; start += 30) {
+    // int start = 30 * pos;
+    // {
+    for (int start = 30 * pos; start < 30 * pos + 30 * 50; start += 30) {
         std::cout << start << std::endl;
         ctx->GetComponent<IRoughGyroCorrelator>(kRoughGyroCorrelatorName)
             ->Run(rough_correlation_report.offset, .1, 1e-3, start, start + 60, &rep);
@@ -122,9 +124,9 @@ int main(int args, char** argv) {
         {
             Stopwatch s("Sync");
             auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                            ->Run2(rep.offset, {0,0,0}, start, start + 90);
+                            ->Run(rep.offset, rep.bias_estimate, start, start + 120);
 
-            out << start << "," << sync << "," << rep.offset * 1000 << std::endl;
+            out << start << "," << sync * 1000 << "," << rep.offset * 1000 << std::endl;
         }
     }
 

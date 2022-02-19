@@ -15,11 +15,6 @@
 #include <iomanip>
 #include <random>
 
-#include <opencv2/core/eigen.hpp>
-#include <opencv2/calib3d.hpp>
-
-#define OPTIM_ENABLE_EIGEN_WRAPPERS
-#include <optim.hpp>
 
 using Eigen::Matrix;
 
@@ -46,12 +41,12 @@ class FineSyncImpl : public IFineSync {
                 int end_frame) override {
         std::ofstream out("sync2.csv");
 
-        for (double ofs = initial_offset - 2e-3; ofs < initial_offset + 2e-3; ofs += 1e-5) {
+        for (double ofs = initial_offset - 15e-3; ofs < initial_offset + 15e-3; ofs += 5e-5) {
             double cost = 0;
             for (int frame = start_frame; frame < end_frame; ++frame) {
                 PairDescription desc;
                 if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
-                cost += FrameCost(frame, ofs, {0, 0, 0}, {0, 0, 0});
+                cost += std::fabs(FrameCost(frame, ofs, {0, 0, 0}, {0, 0, 0}));
             }
             out << ofs * 1000 << "," << cost << std::endl;
         }
@@ -61,38 +56,40 @@ class FineSyncImpl : public IFineSync {
 
     double Run(double initial_offset, Eigen::Vector3d bias, int start_frame,
                int end_frame) override {
-        optim::algo_settings_t settings;
-        settings.de_settings.n_pop = 20;
-        settings.de_settings.n_gen = 100;
+        double best_cost = std::numeric_limits<double>::infinity();
+        double best_ofs_coarse = initial_offset;
+        for (double ofs = initial_offset - 7e-3; ofs < initial_offset + 7e-3; ofs += 1e-3) {
+            double cost = 0;
+            for (int frame = start_frame; frame < end_frame; ++frame) {
+                PairDescription desc;
+                if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
+                double residual = FrameCost(frame, ofs, bias, {0, 0, 0});
+                // cost += log(1 + 10 * residual * residual);
+                cost += residual * residual;
+            }
+            if (cost < best_cost) {
+                best_cost = cost;
+                best_ofs_coarse = ofs;
+            }
+        }
+        double best_ofs_fine = best_ofs_coarse;
+        for (double ofs = best_ofs_coarse - 1e-3; ofs < best_ofs_coarse + 1e-3; ofs += 1e-5) {
+            double cost = 0;
+            for (int frame = start_frame; frame < end_frame; ++frame) {
+                PairDescription desc;
+                if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
+                double residual = FrameCost(frame, ofs, bias, {0, 0, 0});
+                // cost += log(1 + 10 * residual * residual);
+                cost += residual * residual;
+            }
+            if (cost < best_cost) {
+                best_cost = cost;
+                best_ofs_fine = ofs;
+            }
+        }
 
-        initial_offset *= 1000;
-        bias *= sample_rate_;
-        Eigen::VectorXd init_sol(4, 1);
-        init_sol << initial_offset, bias(0, 0), bias(1, 0), bias(2, 0);
-
-        settings.vals_bound = true;
-        settings.lower_bounds.resize(4, 1);
-        settings.upper_bounds.resize(4, 1);
-        settings.lower_bounds << init_sol(0, 0) - 15, -.1, -.1, -.1;
-        settings.upper_bounds << init_sol(0, 0) + 15, +.1, +.1, +.1;
-        
-        optim::de(
-            init_sol,
-            [&](const Eigen::VectorXd& params, Eigen::VectorXd*, void*) {
-                double cost = 0;
-                for (int frame = start_frame; frame < end_frame; ++frame) {
-                    PairDescription desc;
-                    if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
-                    auto bias =
-                        Eigen::Vector3d{params(1, 0), params(2, 0), params(3, 0)} / sample_rate_;
-                    cost += FrameCost(frame, params(0, 0) / 1000., bias, {0, 0, 0});
-                }
-                return cost;
-            },
-            nullptr, settings);
-        std ::cout << "de-sync: " << init_sol(0, 0) << " | " << init_sol.block(1, 0, 3, 1)
-                   << std::endl;
-        return init_sol(0, 0) / 1000.;
+        std ::cout << "b-sync: " << best_ofs_fine << std::endl;
+        return best_ofs_fine;
     }
 
     std::shared_ptr<IPairStorage> pair_storage_;
@@ -112,7 +109,7 @@ class FineSyncImpl : public IFineSync {
         double rs_coeff = calibration_provider_->GetRsCoefficent();
         auto frame_height = calibration_provider_->GetCalibraiton().Height();
 
-        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(), 3);
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(), 3),  nproblem(desc_.point_ids.size(), 3);
         double interframe = desc_.timestamp_b - desc_.timestamp_a;
         for (int i = 0; i < desc_.point_ids.size(); ++i) {
             double ts_a = rs_coeff * desc_.points_a[i].y / frame_height,
@@ -141,7 +138,13 @@ class FineSyncImpl : public IFineSync {
             point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
 
             problem.row(i) = point_br.normalized().cross(point_a.normalized());
-            problem.row(i).normalize();
+            nproblem.row(i) = problem.row(i) / problem.row(i).norm(); 
+            double old_len = problem.row(i).norm();
+            // problem.row(i).normalize();
+            // nproblem.row(i) *= log(1 + old_len / 2e-2);
+            // problem.row(i) *= atan(old_len / 2e-2);
+            // problem.row(i) *= atan(old_len*M_PI/2)/M_PI*2;
+            // std::cout << old_len << std::endl;
         }
 
         // std::ofstream out("problem.xyz");
@@ -150,16 +153,25 @@ class FineSyncImpl : public IFineSync {
         // }
         // exit(0);
 
-        Eigen::Matrix<double, -1, 1> weights(problem.rows(), 1);
+        Eigen::Matrix<double, -1, 1> weights(nproblem.rows(), 1);
         weights.setOnes();
         { /* https://hal.inria.fr/inria-00074015/document */
             Eigen::Vector3d best_sol;
             double least_med = std::numeric_limits<double>::infinity();
-            std::mt19937 gen;
-            std::normal_distribution<double> normal;
-            for (int i = 0; i < 20; ++i) {
-                auto v = Eigen::Vector3d{normal(gen), normal(gen), normal(gen)}.normalized().eval();
-                auto residuals = (problem * v).array().eval();
+            for (int i = 0; i < 200; ++i) {
+                int vs[3];
+                vs[0] = vs[1] = rand() % nproblem.rows();
+                while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % nproblem.rows();
+                while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % nproblem.rows();
+
+                auto v = (Eigen::Vector3d{nproblem.row(vs[0]) - nproblem.row(vs[1])})
+                             .cross(Eigen::Vector3d{nproblem.row(vs[0]) - nproblem.row(vs[2])})
+                             .normalized()
+                             .eval();
+
+                // auto v = Eigen::Vector3d{normal(gen), normal(gen),
+                // normal(gen)}.normalized().eval();
+                auto residuals = (nproblem * v).array().eval();
                 auto residuals2 = (residuals * residuals).eval();
 
                 std::sort(residuals2.data(), residuals2.data() + residuals2.rows());
@@ -170,15 +182,19 @@ class FineSyncImpl : public IFineSync {
                 }
             }
             auto residuals = (problem * best_sol).array().eval();
-            auto k = 1e1;
+            auto k = 1e3;
             weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
-            for (int i = 0; i < 10; ++i) {
+            // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
+            // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
+            for (int i = 0; i < 20; ++i) {
                 auto svd = (problem.array().colwise() * weights.array())
                                .matrix()
                                .jacobiSvd(Eigen::ComputeFullV);
                 auto V = svd.matrixV().eval();
                 residuals = (problem * V.col(V.cols() - 1)).array().eval();
                 weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+                // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
+                // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
             }
 
             problem = problem.array().colwise() * weights.array();
@@ -187,6 +203,8 @@ class FineSyncImpl : public IFineSync {
         auto svd = problem.jacobiSvd();
 
         auto S = svd.singularValues().eval();
+
+        // std::cout << S(S.rows() - 1, 0) << std::endl;
 
         return S(S.rows() - 1, 0);
     }

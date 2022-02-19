@@ -11,7 +11,7 @@ import matplotlib
 # right = np.searchsorted(exp.values[:,0], (7140+50)/50*1000)
 # print(left,right)
 
-csv = pd.read_csv("sync2.csv", header=None)
+csv = pd.read_csv("sync.csv", header=None)
 print(csv.values.shape)
 
 # fig, ax1 = plt.subplots()

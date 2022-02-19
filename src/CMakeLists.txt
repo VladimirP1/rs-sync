@@ -9,6 +9,9 @@ find_package(nlohmann_json REQUIRED)
 # ceres
 find_package(Ceres REQUIRED)
 
+# openmp
+find_package(OpenMP)
+
 # own lib
 add_subdirectory(lib)
 
