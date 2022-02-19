@@ -12,7 +12,7 @@ include(thirdparty/conan.cmake)
 
 set( CONAN_REQUIREMENTS
     opencv/4.5.3@demo/testing
-    eigen/3.3.8
+    eigen/3.4.0
     ceres-solver/2.0.0
     nlohmann_json/3.10.5
     catch2/2.13.8
@@ -43,5 +43,8 @@ endif()
 
 add_library(rtl INTERFACE)
 target_include_directories(rtl INTERFACE thirdparty/rtl)
+
+add_library(optim INTERFACE)
+target_include_directories(optim INTERFACE thirdparty/optim)
 
 add_subdirectory(src)

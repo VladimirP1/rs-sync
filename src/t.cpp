@@ -87,7 +87,7 @@ int main(int args, char** argv) {
     // double pos = 6240./30;
     // double pos = 5555./30;
     // double pos = 5900./30;
-    for (int i = 30 * pos; i < 30 * pos + 30*1; ++i) {
+    for (int i = 30 * pos; i < 30 * pos + 90*1; ++i) {
         std::cout << i << std::endl;
 
         ctx->GetComponent<IPoseEstimator>(kPoseEstimatorName)->EstimatePose(i);
@@ -122,7 +122,7 @@ int main(int args, char** argv) {
         {
             Stopwatch s("Sync");
             auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                            ->Run2(rep.offset, {0,0,0}, start, start + 30);
+                            ->Run2(rep.offset, {0,0,0}, start, start + 90);
 
             out << start << "," << sync << "," << rep.offset * 1000 << std::endl;
         }

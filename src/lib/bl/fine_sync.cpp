@@ -18,15 +18,12 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/calib3d.hpp>
 
-#include <ceres/ceres.h>
+#define OPTIM_ENABLE_EIGEN_WRAPPERS
+#include <optim.hpp>
 
 using Eigen::Matrix;
 
 namespace rssync {
-
-unsigned long int rnext(unsigned long int seed) {
-    return seed = seed * 1103515245 + 12345;
-}
 
 class FineSyncImpl : public IFineSync {
    public:
@@ -45,360 +42,57 @@ class FineSyncImpl : public IFineSync {
         integrator_lpf_ = {gyro_data.data(), static_cast<int>(gyro_data.size())};
     }
 
-    struct RegularizationResidual {
-        const double k = 1e-2;
-        template <class T>
-        bool operator()(const T* const m, T* residual) const {
-            residual[0] = m[0] * m[0] * k;
-            residual[1] = m[1] * m[1] * k;
-            residual[2] = m[2] * m[2] * k;
-            return true;
-        }
-    };
-
-    class FrameCostFunction2 : public ceres::DynamicCostFunction {
-       public:
-        FrameCostFunction2(FineSyncImpl* fs, int frame, double* ou)
-            : fs_(fs), frame_(frame), ou_(ou) {
-            AddParameterBlock(1);
-            AddParameterBlock(3);
-            AddParameterBlock(3);
-
-            fs_->pair_storage_->Get(frame_, desc_);
-
-            SetNumResiduals(1);
-        }
-        virtual ~FrameCostFunction2() {}
-
-        virtual bool Evaluate(double const* const* parameters, double* residuals,
-                              double** jacobians) const override {
-            double offset = parameters[0][0] / 1000.;
-            Eigen::Vector3d bias, align;
-            bias << parameters[1][0], parameters[1][1], parameters[1][2];
-            align << parameters[2][0], parameters[2][1], parameters[2][2];
-
-            bias.setZero();
-            align.setZero();
-
-            double rs_coeff = fs_->calibration_provider_->GetRsCoefficent();
-            auto frame_height = fs_->calibration_provider_->GetCalibraiton().Height();
-
-            using ScalarT = Eigen::AutoDiffScalar<Eigen::Matrix<double, 7, 1>>;
-            Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(),
-                                                                           3);
-            double interframe = desc_.timestamp_b - desc_.timestamp_a;
-            for (int i = 0; i < desc_.point_ids.size(); ++i) {
-                double ts_a = rs_coeff * desc_.points_a[i].y / frame_height,
-                       ts_b = rs_coeff * desc_.points_b[i].y / frame_height;
-
-                auto gyro =
-                    fs_->integrator_lpf_
-                        .IntegrateGyro(
-                            (desc_.timestamp_a + ts_a * interframe + offset) * fs_->sample_rate_,
-                            (desc_.timestamp_b + ts_b * interframe + offset) * fs_->sample_rate_)
-                        .Mix(fs_->integrator_.IntegrateGyro(
-                                 (desc_.timestamp_a + ts_a * interframe + offset) *
-                                     fs_->sample_rate_,
-                                 (desc_.timestamp_b + ts_b * interframe + offset) *
-                                     fs_->sample_rate_),
-                             *ou_);
-
-                auto gyrob = gyro.Bias(bias / fs_->gyro_loader_->SampleRate());
-
-                Eigen::Vector3d point_a, point_b;
-                point_a << desc_.points_undistorted_a[i].x, desc_.points_undistorted_a[i].y, 1;
-                point_b << desc_.points_undistorted_b[i].x, desc_.points_undistorted_b[i].y, 1;
-
-                auto drot_dt = (gyrob.dt2 - gyrob.dt1).eval();
-                auto rot_wdt = gyrob.rot.cast<ScalarT>().eval();
-                rot_wdt(0, 0).derivatives().setZero();
-                rot_wdt(1, 0).derivatives().setZero();
-                rot_wdt(2, 0).derivatives().setZero();
-                rot_wdt(0, 0).derivatives()(0, 0) = drot_dt(0, 0) * fs_->sample_rate_;
-                rot_wdt(1, 0).derivatives()(0, 0) = drot_dt(1, 0) * fs_->sample_rate_;
-                rot_wdt(2, 0).derivatives()(0, 0) = drot_dt(2, 0) * fs_->sample_rate_;
-                rot_wdt(0, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(0, 0).derivatives();
-                rot_wdt(1, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(1, 0).derivatives();
-                rot_wdt(2, 0).derivatives().block<3, 1>(1, 0) = gyro.rot(2, 0).derivatives();
-
-                Eigen::Matrix<ScalarT, 3, 3> R_align =
-                    AngleAxisToRotationMatrix(Eigen::Matrix<ScalarT, 3, 1>{
-                        ScalarT{align(0, 0), 7, 4}, ScalarT{align(1, 0), 7, 5},
-                        ScalarT{align(2, 0), 7, 6}});
-                Eigen::Matrix<ScalarT, 3, 3> R = AngleAxisToRotationMatrix((-rot_wdt).eval());
-                Eigen::Matrix<ScalarT, 3, 1> point_br =
-                    (R_align * R * R_align.transpose()) * point_b;
-                point_br /= point_br(2, 0);
-                point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
-
-                problem.row(i) = point_br.normalized().cross(point_a.cast<ScalarT>().normalized());
-                problem.row(i).normalize();
-            }
-
-            // std::ofstream out("problem.xyz");
-            // for (int i = 0; i < problem.rows(); ++i) {
-            //     out << std::fixed << std::setprecision(16) << problem.row(i) << std::endl;
-            // }
-            // exit(0);
-
-            double cost;
-            Eigen::MatrixXd res, der;
-            HlsSol(problem, res, der);
-
-            std::copy(res.data(), res.data() + res.rows(), residuals);
-
-            if (jacobians) {
-                if (jacobians[0]) {
-                    auto col = (der.col(0) / 1000.).eval();
-                    std::copy(col.data(), col.data() + col.rows(), jacobians[0]);
-                }
-                if (jacobians[1]) {
-                    auto sm = der.block(0, 1, 1, 3).eval();
-                    Eigen::Map<
-                        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
-                        map(jacobians[1], sm.rows(), sm.cols());
-                    map = sm / fs_->gyro_loader_->SampleRate();
-                    map.setZero();
-                }
-                if (jacobians[2]) {
-                    auto sm = der.block(0, 4, 1, 3).eval();
-                    Eigen::Map<
-                        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>
-                        map(jacobians[2], sm.rows(), sm.cols());
-                    map = sm;
-                    map.setZero();
-                }
-            }
-
-            return true;
-        }
-
-       private:
-        template <class ScalarT>
-        void HlsSol(Eigen::Matrix<ScalarT, Eigen::Dynamic, Eigen::Dynamic> P_ad,
-                    Eigen::MatrixXd& residuals, Eigen::MatrixXd& derivatives) const {
-            Eigen::MatrixXd P(P_ad.rows(), P_ad.cols());
-            for (int j = 0; j < P.rows() * P.cols(); ++j) P.data()[j] = P_ad.data()[j].value();
-
-            Eigen::Matrix<double, -1, 1> weights(P.rows(), 1);
-            weights.setOnes();
-            { /* https://hal.inria.fr/inria-00074015/document */
-
-                Eigen::Vector3d best_sol;
-                unsigned long int rnd = rnext(P_ad.rows());
-                double least_med = std::numeric_limits<double>::infinity();
-                std::mt19937 gen;
-                std::normal_distribution<double> normal;
-                for (int i = 0; i < 200; ++i) {
-                    int vs[3];
-                    vs[0] = vs[1] = (rnd = rnext(rnd)) % P.rows();
-                    while (vs[1] == vs[0]) vs[2] = vs[1] = (rnd = rnext(rnd)) % P.rows();
-                    while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = (rnd = rnext(rnd)) % P.rows();
-
-                    auto v = (Eigen::Vector3d{P.row(vs[0]) - P.row(vs[1])})
-                                 .cross(Eigen::Vector3d{P.row(vs[0]) - P.row(vs[2])})
-                                 .normalized()
-                                 .eval();
-                    
-                    // auto v = Eigen::Vector3d{normal(gen), normal(gen), normal(gen)}.normalized().eval();
-                    auto residuals = (P * v).array().eval();
-                    auto residuals2 = (residuals * residuals).eval();
-
-                    std::sort(residuals2.data(), residuals2.data() + residuals2.rows());
-                    // std::cout << residuals2.transpose() << std::endl;
-                    auto med = residuals2(residuals2.rows() / 4, 0);
-
-                    if (med < least_med) {
-                        least_med = med;
-                        best_sol = v;
-                    }
-                }
-                // std::cout << best_sol.transpose() << std::endl;
-                // -------------------------------
-                auto residuals = (P * best_sol).array().eval();
-                auto k = 1e2;
-                weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
-                // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
-                // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
-
-                // -------------------------------
-                for (int i = 0; i < 50; ++i) {
-                    auto svd = (P.array().colwise() * weights.array())
-                                   .matrix()
-                                   .jacobiSvd(Eigen::ComputeFullV);
-                    auto V = svd.matrixV().eval();
-                    residuals = (P * V.col(V.cols() - 1)).array().eval();
-
-                    weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
-                    // weights = (k / residuals.cwiseAbs()).cwiseMin(1).sqrt();
-                    // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
-                }
-
-                for (int i = 0; i < P_ad.rows(); ++i)
-                    for (int j = 0; j < P_ad.cols(); ++j) P_ad(i, j) *= weights(i, 0);
-            }
-            // std::cout << weights.transpose() << std::endl;
-
-            auto svd = P_ad.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
-            auto U = svd.matrixU().eval();
-            auto V = svd.matrixV().eval();
-            auto S = svd.singularValues().eval();
-            auto res = (U.col(U.cols() - 1) * S(S.rows() - 1, 0)).eval();
-
-            residuals.resize(1, 1);
-            for (int i = 0; i < 1; ++i) {
-                residuals(i, 0) = S(S.rows() - 1, 0).value();  // res(i, 0).value();
-            }
-
-            const int n_der = P_ad(0, 0).derivatives().rows();
-            derivatives.resize(1, n_der);
-            for (int i = 0; i < 1; ++i) {
-                for (int j = 0; j < n_der; ++j) {
-                    derivatives(i, j) = S(S.rows() - 1, 0).derivatives()(j, 0);
-                }
-            }
-        }
-
-       private:
-        FineSyncImpl* fs_;
-        int frame_;
-        double* ou_;
-
-        PairDescription desc_;
-    };
-
     double Run2(double initial_offset, Eigen::Vector3d bias, int start_frame,
                 int end_frame) override {
         std::ofstream out("sync2.csv");
-        std::vector<std::unique_ptr<FrameCostFunction2>> costs;
-        double ou = 1;
-        std::vector<int> frame_idxs;
-        pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
-        for (int frame : frame_idxs) {
-            if (frame < start_frame || frame >= end_frame) {
-                continue;
-            }
-            PairDescription desc;
-            pair_storage_->Get(frame, desc);
-            if (!desc.has_undistorted) {
-                continue;
-            }
 
-            costs.emplace_back(std::make_unique<FrameCostFunction2>(this, frame, &ou));
-        }
-        Eigen::Vector3d align = {0, 0, 0};
-        double* params[3];
-        double* jac[3] = {0, 0, 0};
-        for (double offset = initial_offset * 1000 - 1; offset < initial_offset * 1000 + 1;
-             offset += .005) {
-            params[0] = &offset;
-            params[1] = bias.data();
-            params[2] = align.data();
-            double cst = 0, dcst = 0;
-            for (auto& cf : costs) {
-                Eigen::Matrix<double, -1, 1> res(cf->num_residuals(), 1);
-                Eigen::Matrix<double, -1, 1> jac_t(cf->num_residuals(), 1);
-                jac[0] = jac_t.data();
-                cf->Evaluate(params, res.data(), jac);
-                cst += res.norm();
-                dcst += jac_t.sum();
+        for (double ofs = initial_offset - 2e-3; ofs < initial_offset + 2e-3; ofs += 1e-5) {
+            double cost = 0;
+            for (int frame = start_frame; frame < end_frame; ++frame) {
+                PairDescription desc;
+                if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
+                cost += FrameCost(frame, ofs, {0, 0, 0}, {0, 0, 0});
             }
-            double o2 = offset + 1e-5;
-            params[0] = &o2;
-            params[1] = bias.data();
-            params[2] = align.data();
-            auto old_cst = cst;
-            cst = 0;
-            for (auto& cf : costs) {
-                Eigen::Matrix<double, -1, 1> res(cf->num_residuals(), 1);
-                Eigen::Matrix<double, -1, 1> jac_t(cf->num_residuals(), 1);
-                jac[0] = jac_t.data();
-                cf->Evaluate(params, res.data(), jac);
-                cst += res.norm();
-            }
-            out << offset << "," << old_cst << "," << dcst << "," << (cst - old_cst) << std::endl;
+            out << ofs * 1000 << "," << cost << std::endl;
         }
-        // Eigen::Vector3d align = {0, 0, 0};
-        // double* params[3];
-        // double* jac[3] = {0, 0, 0};
-        // int i = 0;
-        // double offset = initial_offset;
-        // // for (double offset = initial_offset * 1000 - 50; offset < initial_offset * 1000 + 50;
-        //     //  offset += .25) {
-        //     params[0] = &offset;
-        //     params[1] = bias.data();
-        //     params[2] = align.data();
-        //     double cst = 0, dcst = 0;
-        //     for (auto& cf : costs) {
-        //         Eigen::Matrix<double, -1, 1> res(cf->num_residuals(), 1);
-        //         Eigen::Matrix<double, -1, 1> jac_t(cf->num_residuals(), 1);
-        //         jac[0] = jac_t.data();
-        //         cf->Evaluate(params, res.data(), jac);
-        //         out << i++ << "," << res.norm() << "," << jac_t.sum() << std::endl;
-        //         cst += res.norm();
-        //         dcst += jac_t.sum();
-        //     }
-        // // }
-        return 0;
+
+        return initial_offset;
     }
 
     double Run(double initial_offset, Eigen::Vector3d bias, int start_frame,
                int end_frame) override {
+        optim::algo_settings_t settings;
+        settings.de_settings.n_pop = 20;
+        settings.de_settings.n_gen = 100;
+
         initial_offset *= 1000;
+        bias *= sample_rate_;
+        Eigen::VectorXd init_sol(4, 1);
+        init_sol << initial_offset, bias(0, 0), bias(1, 0), bias(2, 0);
 
-        ceres::Problem problem;
-        double ou = 0;
-        Eigen::Vector3d align;
-        align.setZero();
-        std::vector<int> frame_idxs;
-        pair_storage_->GetFramesWith(frame_idxs, false, true, false, false, false);
-        for (int frame : frame_idxs) {
-            if (frame < start_frame || frame >= end_frame) {
-                continue;
-            }
-            PairDescription desc;
-            pair_storage_->Get(frame, desc);
-            if (!desc.has_undistorted) {
-                continue;
-            }
-
-            problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou), nullptr,
-                                     &initial_offset, bias.data(), align.data());
-        }
-
-        // problem.AddResidualBlock(new ceres::AutoDiffCostFunction<RegularizationResidual,3,3>(new
-        // RegularizationResidual()), nullptr, bias.data());
-        std::cout << "Before sync: " << initial_offset << "  " << bias.transpose() << std::endl;
-
-        ceres::Solver::Options options;
-        options.linear_solver_type = ceres::DENSE_QR;
-        options.minimizer_progress_to_stdout = true;
-        options.max_num_iterations = 200;
-        // options.parameter_tolerance = 1e-5;
-        options.max_trust_region_radius = 1e-3;
-        options.initial_trust_region_radius = 5e-4;
-        // options.use_inner_iterations = true;
-        options.use_nonmonotonic_steps = true;
-        // options.check_gradients = true;
-        // options.gradient_check_numeric_derivative_relative_step_size = 1e-8;
-
-        options.num_threads = 8;
-        ceres::Solver::Summary summary;
-        ceres::Solve(options, &problem, &summary);
-        std::cout << summary.FullReport() << "\n";
-
-        std::cout << "Pre-Sync: " << initial_offset << "  " << bias.transpose() * 180 / M_PI * 200
-                  << " | " << align.transpose() * 180 / M_PI << std::endl;
-
-        ou = 1;
-
-        ceres::Solve(options, &problem, &summary);
-        std::cout << summary.FullReport() << "\n";
-
-        std::cout << "Sync: " << initial_offset << "  " << bias.transpose() * 180 / M_PI * 200
-                  << " | " << align.transpose() * 180 / M_PI << std::endl;
-
-        return initial_offset;
+        settings.vals_bound = true;
+        settings.lower_bounds.resize(4, 1);
+        settings.upper_bounds.resize(4, 1);
+        settings.lower_bounds << init_sol(0, 0) - 15, -.1, -.1, -.1;
+        settings.upper_bounds << init_sol(0, 0) + 15, +.1, +.1, +.1;
+        
+        optim::de(
+            init_sol,
+            [&](const Eigen::VectorXd& params, Eigen::VectorXd*, void*) {
+                double cost = 0;
+                for (int frame = start_frame; frame < end_frame; ++frame) {
+                    PairDescription desc;
+                    if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
+                    auto bias =
+                        Eigen::Vector3d{params(1, 0), params(2, 0), params(3, 0)} / sample_rate_;
+                    cost += FrameCost(frame, params(0, 0) / 1000., bias, {0, 0, 0});
+                }
+                return cost;
+            },
+            nullptr, settings);
+        std ::cout << "de-sync: " << init_sol(0, 0) << " | " << init_sol.block(1, 0, 3, 1)
+                   << std::endl;
+        return init_sol(0, 0) / 1000.;
     }
 
     std::shared_ptr<IPairStorage> pair_storage_;
@@ -408,6 +102,94 @@ class FineSyncImpl : public IFineSync {
     GyroIntegrator integrator_;
     GyroIntegrator integrator_lpf_;
     double sample_rate_;
+
+   private:
+    double FrameCost(int frame, double gyro_delay, Eigen::Vector3d bias, Eigen::Vector3d align,
+                     double hf_attenuate = 1) {
+        PairDescription desc_;
+        pair_storage_->Get(frame, desc_);
+
+        double rs_coeff = calibration_provider_->GetRsCoefficent();
+        auto frame_height = calibration_provider_->GetCalibraiton().Height();
+
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(), 3);
+        double interframe = desc_.timestamp_b - desc_.timestamp_a;
+        for (int i = 0; i < desc_.point_ids.size(); ++i) {
+            double ts_a = rs_coeff * desc_.points_a[i].y / frame_height,
+                   ts_b = rs_coeff * desc_.points_b[i].y / frame_height;
+
+            auto gyro =
+                integrator_lpf_
+                    .IntegrateGyro(
+                        (desc_.timestamp_a + ts_a * interframe + gyro_delay) * sample_rate_,
+                        (desc_.timestamp_b + ts_b * interframe + gyro_delay) * sample_rate_)
+                    .Mix(integrator_.IntegrateGyro(
+                             (desc_.timestamp_a + ts_a * interframe + gyro_delay) * sample_rate_,
+                             (desc_.timestamp_b + ts_b * interframe + gyro_delay) * sample_rate_),
+                         hf_attenuate);
+
+            auto gyrob = gyro.Bias(bias);
+
+            Eigen::Vector3d point_a, point_b;
+            point_a << desc_.points_undistorted_a[i].x, desc_.points_undistorted_a[i].y, 1;
+            point_b << desc_.points_undistorted_b[i].x, desc_.points_undistorted_b[i].y, 1;
+
+            Eigen::Matrix3d R_align = AngleAxisToRotationMatrix(align);
+            Eigen::Matrix3d R = AngleAxisToRotationMatrix((-gyrob.rot).eval());
+            Eigen::Vector3d point_br = (R_align * R * R_align.transpose()) * point_b;
+            point_br /= point_br(2, 0);
+            point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
+
+            problem.row(i) = point_br.normalized().cross(point_a.normalized());
+            problem.row(i).normalize();
+        }
+
+        // std::ofstream out("problem.xyz");
+        // for (int i = 0; i < problem.rows(); ++i) {
+        //     out << std::fixed << std::setprecision(16) << problem.row(i) << std::endl;
+        // }
+        // exit(0);
+
+        Eigen::Matrix<double, -1, 1> weights(problem.rows(), 1);
+        weights.setOnes();
+        { /* https://hal.inria.fr/inria-00074015/document */
+            Eigen::Vector3d best_sol;
+            double least_med = std::numeric_limits<double>::infinity();
+            std::mt19937 gen;
+            std::normal_distribution<double> normal;
+            for (int i = 0; i < 20; ++i) {
+                auto v = Eigen::Vector3d{normal(gen), normal(gen), normal(gen)}.normalized().eval();
+                auto residuals = (problem * v).array().eval();
+                auto residuals2 = (residuals * residuals).eval();
+
+                std::sort(residuals2.data(), residuals2.data() + residuals2.rows());
+                auto med = residuals2(residuals2.rows() / 4, 0);
+                if (med < least_med) {
+                    least_med = med;
+                    best_sol = v;
+                }
+            }
+            auto residuals = (problem * best_sol).array().eval();
+            auto k = 1e1;
+            weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+            for (int i = 0; i < 10; ++i) {
+                auto svd = (problem.array().colwise() * weights.array())
+                               .matrix()
+                               .jacobiSvd(Eigen::ComputeFullV);
+                auto V = svd.matrixV().eval();
+                residuals = (problem * V.col(V.cols() - 1)).array().eval();
+                weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+            }
+
+            problem = problem.array().colwise() * weights.array();
+        }
+
+        auto svd = problem.jacobiSvd();
+
+        auto S = svd.singularValues().eval();
+
+        return S(S.rows() - 1, 0);
+    }
 };
 
 void RegisterFineSync(std::shared_ptr<IContext> ctx, std::string name) {

@@ -47,5 +47,5 @@ set( LIBBL_SOURCES
 
 add_library(libbl ${LIBBL_SOURCES})
 target_include_directories(libbl PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(libbl PUBLIC libds libvision libmath Ceres::ceres)
+target_link_libraries(libbl PUBLIC libds libvision libmath optim Ceres::ceres)
 install(TARGETS libbl)
