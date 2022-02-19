@@ -44,8 +44,8 @@ class OpticalFlowLK : public IOpticalFlow {
 
         std::vector<cv::Point2f> new_corners;
         cv::calcOpticalFlowPyrLK(
-            prev, cur, info.points, new_corners, status, err, cv::Size(21, 21), 6,
-            cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 30, .001), 0, 1e-4);
+            prev, cur, info.points, new_corners, status, err, cv::Size(25, 25), 9,
+            cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 100, .0001), 0, 1e-4);
 
         // Filter out low quality corners
         auto old_corner_iter = info.points.begin();
@@ -129,11 +129,11 @@ class OpticalFlowLK : public IOpticalFlow {
 
         // Find corners
         cv::goodFeaturesToTrack(img, corners, max_corners_, discard_threshold_scale_, minDist);
-        if (corners.size() > 0) {
-            cv::cornerSubPix(
-                img, corners, cv::Size(10, 10), cv::Size(-1, -1),
-                cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20, .03));
-        }
+        // if (corners.size() > 0) {
+        //     cv::cornerSubPix(
+        //         img, corners, cv::Size(10, 10), cv::Size(-1, -1),
+        //         cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 20, .03));
+        // }
 
         // Calculate our quality metric on them
         std::vector<double> responses(corners.size(), 0.);
@@ -188,7 +188,7 @@ class OpticalFlowLK : public IOpticalFlow {
     std::mutex cache_mutex_;
 
     int min_corners_{70};
-    int max_corners_{200};
+    int max_corners_{500};
     double discard_threshold_scale_{1e-3};
 };
 

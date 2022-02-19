@@ -126,12 +126,14 @@ class FineSyncImpl : public IFineSync {
                 point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
 
                 problem.row(i) = point_br.normalized().cross(point_a.cast<ScalarT>().normalized());
+                problem.row(i).normalize();
             }
 
             // std::ofstream out("problem.xyz");
             // for (int i = 0; i < problem.rows(); ++i) {
             //     out << std::fixed << std::setprecision(16) << problem.row(i) << std::endl;
             // }
+            // exit(0);
 
             double cost;
             Eigen::MatrixXd res, der;
@@ -178,53 +180,59 @@ class FineSyncImpl : public IFineSync {
 
                 Eigen::Vector3d best_sol;
                 double least_med = std::numeric_limits<double>::infinity();
-                for (int i = 0; i < 100; ++i) {
+                srand(12);
+                for (int i = 0; i < 200; ++i) {
                     int vs[3];
-                    vs[0] = vs[1] = rand() % 3;
-                    while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % 3;
-                    while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % 3;
+                    vs[0] = vs[1] = rand() % P.rows();
+                    while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % P.rows();
+                    while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % P.rows();
 
-                    auto v =
-                        (Eigen::Vector3d{P.row(vs[0]) - P.row(vs[1])}).cross(Eigen::Vector3d{P.row(vs[0]) - P.row(vs[2])}).normalized().eval();
-                    auto residuals = (P * v).eval();
+                    auto v = (Eigen::Vector3d{P.row(vs[0]) - P.row(vs[1])})
+                                 .cross(Eigen::Vector3d{P.row(vs[0]) - P.row(vs[2])})
+                                 .normalized()
+                                 .eval();
+                    auto residuals = (P * v).array().eval();
                     auto residuals2 = (residuals * residuals).eval();
 
                     std::sort(residuals2.data(), residuals2.data() + residuals2.rows());
-                    auto med = residuals2(residuals2.rows() / 2, 0);
+                    // std::cout << residuals2.transpose() << std::endl;
+                    auto med = residuals2(residuals2.rows() / 4, 0);
 
                     if (med < least_med) {
                         least_med = med;
                         best_sol = v;
                     }
                 }
-                std::cout << best_sol.transpose() << std::endl;
+                // std::cout << best_sol.transpose() << std::endl;
                 // -------------------------------
                 auto residuals = (P * best_sol).array().eval();
-                auto k = 1e3;
+                auto k = 1e1;
                 weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+                // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
+
+
                 // -------------------------------
                 for (int i = 0; i < 10; ++i) {
                     auto svd = (P.array().colwise() * weights.array())
                                    .matrix()
-                                   .jacobiSvd(Eigen::ComputeFullU);
-                    auto U = svd.matrixU().eval();
-                    auto S = svd.singularValues().eval();
-                    auto residuals = (U.col(U.cols() - 1) * S(S.rows() - 1, 0)).array().eval();
+                                   .jacobiSvd(Eigen::ComputeFullV);
+                    auto V = svd.matrixV().eval();
+                    residuals = (P * V.col(V.cols() - 1)).array().eval();
 
-                    Eigen::Matrix<double, -1, 1> new_weights =
-                        (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
-
-                    weights = new_weights;
+                    weights = (1 / (1 + residuals * residuals * k * k)).sqrt().matrix();
+                    // weights = (1 / (1 + (residuals * k).cwiseAbs())).sqrt();
                 }
+
+                // weights *= residuals.matrix().norm();
 
                 for (int i = 0; i < P_ad.rows(); ++i)
                     for (int j = 0; j < P_ad.cols(); ++j) P_ad(i, j) *= weights(i, 0);
             }
-
-            exit(0);
+            // std::cout << weights.transpose() << std::endl;
 
             auto svd = P_ad.jacobiSvd(Eigen::ComputeFullU | Eigen::ComputeFullV);
             auto U = svd.matrixU().eval();
+            auto V = svd.matrixV().eval();
             auto S = svd.singularValues().eval();
             auto res = (U.col(U.cols() - 1) * S(S.rows() - 1, 0)).eval();
 
@@ -336,6 +344,27 @@ class FineSyncImpl : public IFineSync {
             }
             out << offset << "," << cst << "," << dcst << std::endl;
         }
+        // Eigen::Vector3d align = {0, 0, 0};
+        // double* params[3];
+        // double* jac[3] = {0, 0, 0};
+        // int i = 0;
+        // double offset = initial_offset;
+        // // for (double offset = initial_offset * 1000 - 50; offset < initial_offset * 1000 + 50;
+        //     //  offset += .25) {
+        //     params[0] = &offset;
+        //     params[1] = bias.data();
+        //     params[2] = align.data();
+        //     double cst = 0, dcst = 0;
+        //     for (auto& cf : costs) {
+        //         Eigen::Matrix<double, -1, 1> res(cf->num_residuals(), 1);
+        //         Eigen::Matrix<double, -1, 1> jac_t(cf->num_residuals(), 1);
+        //         jac[0] = jac_t.data();
+        //         cf->Evaluate(params, res.data(), jac);
+        //         out << i++ << "," << res.norm() << "," << jac_t.sum() << std::endl;
+        //         cst += res.norm();
+        //         dcst += jac_t.sum();
+        //     }
+        // // }
         return 0;
     }
 
@@ -360,8 +389,8 @@ class FineSyncImpl : public IFineSync {
             }
 
             problem.AddResidualBlock(new FrameCostFunction2(this, frame, &ou),
-                                     nullptr /*new ceres::CauchyLoss(.01)*/, &initial_offset,
-                                     bias.data(), align.data());
+                                     nullptr, &initial_offset, bias.data(),
+                                     align.data());
         }
 
         // problem.AddResidualBlock(new ceres::AutoDiffCostFunction<RegularizationResidual,3,3>(new
@@ -372,11 +401,11 @@ class FineSyncImpl : public IFineSync {
         options.linear_solver_type = ceres::DENSE_QR;
         options.minimizer_progress_to_stdout = true;
         options.max_num_iterations = 200;
-        options.parameter_tolerance = 1e-5;
+        // options.parameter_tolerance = 1e-5;
         options.max_trust_region_radius = 1e-3;
         options.initial_trust_region_radius = 5e-4;
         options.use_inner_iterations = true;
-        options.use_nonmonotonic_steps = true;
+        // options.use_nonmonotonic_steps = true;
         // options.check_gradients = true;
         // options.gradient_check_numeric_derivative_relative_step_size = 1e-8;
 
