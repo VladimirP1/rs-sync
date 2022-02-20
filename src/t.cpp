@@ -124,7 +124,7 @@ int main(int args, char** argv) {
         {
             Stopwatch s("Sync");
             auto sync = ctx->GetComponent<IFineSync>(kFineSyncName)
-                            ->Run(rep.offset, rep.bias_estimate, start, start + 120);
+                            ->Run(rep.offset, {0,0,0}, start, start + 120);
 
             out << start << "," << sync * 1000 << "," << rep.offset * 1000 << std::endl;
         }

@@ -73,7 +73,7 @@ class FineSyncImpl : public IFineSync {
             }
         }
         double best_ofs_fine = best_ofs_coarse;
-        for (double ofs = best_ofs_coarse - 1e-3; ofs < best_ofs_coarse + 1e-3; ofs += 1e-5) {
+        for (double ofs = best_ofs_coarse - 2e-3; ofs < best_ofs_coarse + 2e-3; ofs += 5e-5) {
             double cost = 0;
             for (int frame = start_frame; frame < end_frame; ++frame) {
                 PairDescription desc;
