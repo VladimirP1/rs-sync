@@ -25,7 +25,7 @@ print(csv.values.shape)
 # vs = csv.values[csv.values[:,1] < -35]
 # vs = vs[vs[:,1] > -50]
 # plt.plot(vs[:,0], vs[:,1], color='red')
-plt.plot(csv.values[:,0]/60, csv.values[:,1], color='red')
+plt.plot(csv.values[:,0], csv.values[:,1], color='red')
 
 # csv.values[:,:][csv.values[:,2] < 0] = -csv.values[:,:][csv.values[:,2] < 0]
 # plt.plot(csv.values[:,2], color='red')

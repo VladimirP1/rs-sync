@@ -15,7 +15,6 @@
 #include <iomanip>
 #include <random>
 
-
 using Eigen::Matrix;
 
 namespace rssync {
@@ -46,7 +45,7 @@ class FineSyncImpl : public IFineSync {
             for (int frame = start_frame; frame < end_frame; ++frame) {
                 PairDescription desc;
                 if (!pair_storage_->Get(frame, desc) || !desc.has_undistorted) continue;
-                cost += std::fabs(FrameCost(frame, ofs, {0, 0, 0}, {0, 0, 0}));
+                cost += std::fabs(FrameCost(frame, ofs, bias, {0, 0, 0}, 1.));
             }
             out << ofs * 1000 << "," << cost << std::endl;
         }
@@ -58,7 +57,7 @@ class FineSyncImpl : public IFineSync {
                int end_frame) override {
         double best_cost = std::numeric_limits<double>::infinity();
         double best_ofs_coarse = initial_offset;
-        for (double ofs = initial_offset - 7e-3; ofs < initial_offset + 7e-3; ofs += 1e-3) {
+        for (double ofs = initial_offset - 15e-3; ofs < initial_offset + 15e-3; ofs += 1e-3) {
             double cost = 0;
             for (int frame = start_frame; frame < end_frame; ++frame) {
                 PairDescription desc;
@@ -109,7 +108,8 @@ class FineSyncImpl : public IFineSync {
         double rs_coeff = calibration_provider_->GetRsCoefficent();
         auto frame_height = calibration_provider_->GetCalibraiton().Height();
 
-        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(), 3),  nproblem(desc_.point_ids.size(), 3);
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> problem(desc_.point_ids.size(), 3),
+            nproblem(desc_.point_ids.size(), 3);
         double interframe = desc_.timestamp_b - desc_.timestamp_a;
         for (int i = 0; i < desc_.point_ids.size(); ++i) {
             double ts_a = rs_coeff * desc_.points_a[i].y / frame_height,
@@ -138,8 +138,8 @@ class FineSyncImpl : public IFineSync {
             point_br = (point_br - point_a) / (1 + ts_b - ts_a) + point_a;
 
             problem.row(i) = point_br.normalized().cross(point_a.normalized());
-            nproblem.row(i) = problem.row(i) / problem.row(i).norm(); 
-            double old_len = problem.row(i).norm();
+            nproblem.row(i) = problem.row(i) / problem.row(i).norm();
+            // double old_len = problem.row(i).norm();
             // problem.row(i).normalize();
             // nproblem.row(i) *= log(1 + old_len / 2e-2);
             // problem.row(i) *= atan(old_len / 2e-2);
@@ -205,7 +205,11 @@ class FineSyncImpl : public IFineSync {
         auto S = svd.singularValues().eval();
 
         // std::cout << S(S.rows() - 1, 0) << std::endl;
-
+        // double tune_switch = 1e-1;
+        // auto problem_weight = problem.rowwise().norm().sum() / tune_switch;
+        // std::cout << problem_weight << std::endl;
+        // double dir_weight = atan(problem_weight * M_PI / 2.) / M_PI * 2.;
+        // return S(S.rows() - 1, 0) * dir_weight + problem_weight * (1 - dir_weight) * tune_switch;
         return S(S.rows() - 1, 0);
     }
 };
