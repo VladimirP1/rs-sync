@@ -1,0 +1,14 @@
+{
+  "name": "rssync",
+  "version-string": "0.0.1",
+  "dependencies": [
+    "armadillo",
+    {
+      "name": "opencv",
+      "features": [
+        "contrib",
+        "ffmpeg"
+      ]
+    }
+  ]
+}

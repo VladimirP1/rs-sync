@@ -2,3 +2,7 @@
 /.cache
 compile_commands.json
 /venv
+/ext
+/target
+/Cargo.lock
+/vcpkg_installed

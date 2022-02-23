@@ -1,0 +1,14 @@
+[package]
+name = "telemetry-parser-cpp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type =["cdylib"]
+
+[dependencies]
+telemetry-parser = { git = "https://github.com/AdrianEddy/telemetry-parser" }
+argh = "*"
+serde = { version = "*", features = ["derive"] }
+serde_json = { version = "*", features = ["preserve_order"] }
+libc = "0.2"
