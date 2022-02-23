@@ -37,13 +37,20 @@ arma::vec4 quat_prod(arma::vec4 p, arma::vec4 q) {
             (p(0) * q(3) + p(1) * q(2) - p(2) * q(1) + p(3) * q(0))};
 }
 
+arma::vec4 quat_conj(arma::vec4 q) {
+    q.rows(1, 3) = -q.rows(1, 3);
+    return q;
+}
+
+arma::vec3 quat_rotate_point(arma::vec4 q, arma::vec3 p) {
+    return quat_prod(q, quat_prod({0, p[0], p[1], p[2]}, quat_conj(q))).rows(1,3);
+}
+
 static inline arma::vec4 quat_double(arma::vec4 p, arma::vec4 q) {
     return 2. * arma::dot(p, q) * q - p;
 }
 
-static inline arma::vec4 quat_bisect(arma::vec4 p, arma::vec4 q) {
-    return (p + q) * .5;
-}
+static inline arma::vec4 quat_bisect(arma::vec4 p, arma::vec4 q) { return (p + q) * .5; }
 
 inline arma::vec4 quat_slerp(arma::vec4 p, arma::vec4 q, double t) {
     if (arma::dot(p, q) < 0) {
@@ -79,9 +86,7 @@ arma::vec4 quat_squad(arma::vec4 p0, arma::vec4 p1, arma::vec4 p2, arma::vec4 p3
     return quat_slerp(quat_slerp(j0, j1, t), quat_slerp(j1, j2, t), t);
 }
 
-inline arma::vec4 quat_lerp(arma::vec4 p, arma::vec4 q, double t) {
-    return (p * (1 - t) + q * t);
-}
+inline arma::vec4 quat_lerp(arma::vec4 p, arma::vec4 q, double t) { return (p * (1 - t) + q * t); }
 
 arma::vec4 quat_quad(arma::vec4 p0, arma::vec4 p1, arma::vec4 p2, arma::vec4 p3, double t) {
     arma::vec4 a0 = quat_bisect(quat_double(p0, p1), p2);

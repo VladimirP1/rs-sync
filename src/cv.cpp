@@ -49,8 +49,8 @@ void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_f
             arma::vec2 a = lens_undistort_point(lens, points_a[i]);
             arma::vec2 b = lens_undistort_point(lens, points_b[i]);
             
-            double ts_a = frame / fps + lens.ro * (points_a[i][1] / cur.rows);
-            double ts_b = (frame + 1) / fps + lens.ro * (points_b[i][1] / cur.rows);
+            double ts_a = (frame + 0.) / fps + lens.ro * (points_a[i][1] / cur.rows);
+            double ts_b = (frame + 1.) / fps + lens.ro * (points_b[i][1] / cur.rows);
 
             m.submat(0, i, 1, i) = a;
             m.submat(3, i, 4, i) = b;
