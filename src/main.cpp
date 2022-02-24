@@ -35,33 +35,37 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 
 arma::vec4 gyro_integrate(const arma::mat& quats, double from, double to) {
     // std::tie(from, to) = std::make_pair(std::max(from, 1.), std::min(to, quats.n_cols - 3.));
+    const auto integr = [&](int x, int y) {
+        int nx{y-x}, ny{y + x};
+        return quat_prod(quat_conj(quats.col(from + nx)), quats.col(to + ny));
+    };
     arma::vec4 curv0, curv1, curv2, curv3;
     {
-        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to - 1));
-        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to - 1));
-        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to - 1));
-        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to - 1));
+        arma::vec4 p0 = integr(-1, -1);
+        arma::vec4 p1 = integr(+0, -1);
+        arma::vec4 p2 = integr(+1, -1);
+        arma::vec4 p3 = integr(+2, -1);
         curv0 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
     }
     {
-        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 0));
-        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 0));
-        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 0));
-        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 0));
+        arma::vec4 p0 = integr(-1, +0);
+        arma::vec4 p1 = integr(+0, +0);
+        arma::vec4 p2 = integr(+1, +0);
+        arma::vec4 p3 = integr(+2, +0);
         curv1 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
     }
     {
-        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 1));
-        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 1));
-        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 1));
-        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 1));
+        arma::vec4 p0 = integr(-1, +1);
+        arma::vec4 p1 = integr(+0, +1);
+        arma::vec4 p2 = integr(+1, +1);
+        arma::vec4 p3 = integr(+2, +1);
         curv2 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
     }
     {
-        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 2));
-        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 2));
-        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 2));
-        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 2));
+        arma::vec4 p0 = integr(-1, +2);
+        arma::vec4 p1 = integr(+0, +2);
+        arma::vec4 p2 = integr(+1, +2);
+        arma::vec4 p3 = integr(+2, +2);
         curv3 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
     }
     return quat_quad(curv0, curv1, curv2, curv3, to - static_cast<int>(to));
@@ -114,7 +118,7 @@ int main() {
     // opt_run(opt_data);
 
     for (double t = 3; t < 20; t += .001) {
-        arma::vec4 g = gyro_integrate(opt_data.quats, 3, t);
+        arma::vec4 g = gyro_integrate(opt_data.quats, t, t + 1./30);
         std::cout << t << "," << g[2] << std::endl;
     }
 }
