@@ -34,12 +34,48 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 }
 
 arma::vec4 gyro_integrate(const arma::mat& quats, double from, double to) {
-    std::tie(from, to) = std::make_pair(std::max(from, 1.), std::min(to, quats.n_cols - 3.));
-    arma::vec4 rot1 = quat_quad(quats.col(from - 1), quats.col(from), quats.col(from + 1),
-                                quats.col(from + 2), from - static_cast<int>(from));
-    arma::vec4 rot2 = quat_quad(quats.col(to - 1), quats.col(to), quats.col(to + 1),
-                                quats.col(to + 2), to - static_cast<int>(to));
-    return quat_prod(quat_conj(rot1), rot2);
+    // std::tie(from, to) = std::make_pair(std::max(from, 1.), std::min(to, quats.n_cols - 3.));
+    arma::vec4 curv0, curv1, curv2, curv3;
+    {
+        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to - 1));
+        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to - 1));
+        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to - 1));
+        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to - 1));
+        curv0 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
+    }
+    {
+        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 0));
+        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 0));
+        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 0));
+        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 0));
+        curv1 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
+    }
+    {
+        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 1));
+        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 1));
+        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 1));
+        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 1));
+        curv2 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
+    }
+    {
+        arma::vec4 p0 = quat_prod(quat_conj(quats.col(from - 1)), quats.col(to + 2));
+        arma::vec4 p1 = quat_prod(quat_conj(quats.col(from + 0)), quats.col(to + 2));
+        arma::vec4 p2 = quat_prod(quat_conj(quats.col(from + 1)), quats.col(to + 2));
+        arma::vec4 p3 = quat_prod(quat_conj(quats.col(from + 2)), quats.col(to + 2));
+        curv3 = quat_quad(p0, p1, p2, p3, from - static_cast<int>(from));
+    }
+    return quat_quad(curv0, curv1, curv2, curv3, to - static_cast<int>(to));
+}
+
+arma::vec4 gyro_integrate_grad(const arma::mat& quats, double from, double to) {
+    const double step = 1e-10;
+    // under small angle assumption, sinx=x
+    arma::vec4 mid = gyro_integrate(quats, from, to);
+    arma::vec4 left = gyro_integrate(quats, from - step, to - step);
+    arma::vec4 right = gyro_integrate(quats, from + step, to + step);
+    arma::vec4 grad =
+        (quat_prod(quat_conj(left), mid) + quat_prod(quat_conj(mid), right)) / (2 * step);
+    return grad;
 }
 
 void opt_run(const OptData& data) {
@@ -62,7 +98,7 @@ void opt_run(const OptData& data) {
         }
 
         for (int i = 0; i < problem.n_rows; ++i) {
-            std::cout << problem(i,0) << " "<< problem(i,1) << " " << problem(i,2) << std::endl;
+            std::cout << problem(i, 0) << " " << problem(i, 1) << " " << problem(i, 2) << std::endl;
         }
         // exit(0);
     }
@@ -72,8 +108,13 @@ int main() {
     OptData opt_data;
     optdata_fill_gyro(opt_data, "GX011338.MP4", "XYZ");
 
-    Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 304, 305);
+    // Lens lens = lens_load("lens.txt", "hero6_27k_43");
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 304, 305);
 
-    opt_run(opt_data);
+    // opt_run(opt_data);
+
+    for (double t = 3; t < 20; t += .001) {
+        arma::vec4 g = gyro_integrate(opt_data.quats, 3, t);
+        std::cout << t << "," << g[2] << std::endl;
+    }
 }
