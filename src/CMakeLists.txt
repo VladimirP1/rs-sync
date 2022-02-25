@@ -3,4 +3,4 @@ find_package(OpenCV CONFIG REQUIRED)
 
 add_executable(main main.cpp quat.cpp signal.cpp cv.cpp)
 
-target_link_libraries(main PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp)
+target_link_libraries(main PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp spline)

@@ -12,4 +12,6 @@ set_target_properties(
         IMPORTED_NO_SONAME TRUE
 )
 
+add_subdirectory(ext/spline)
+
 add_subdirectory(src)
