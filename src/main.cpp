@@ -44,8 +44,8 @@ arma::mat ndspline_der(const ndspline& nsp, double t) {
 }
 
 arma::vec4 gyro_integrate(const ndspline& nsp, double t1, double t2) {
-    // arma::vec4 p = arma::normalise(ndspline_eval(nsp, t1));
-    // arma::vec4 q = arma::normalise(ndspline_eval(nsp, t2));
+    // arma::vec4 p = ndspline_eval(nsp, t1);
+    // arma::vec4 q = ndspline_eval(nsp, t2);
     arma::vec4 p = arma::normalise(ndspline_eval(nsp, t1));
     arma::vec4 q = arma::normalise(ndspline_eval(nsp, t2));
     return quat_prod(quat_conj(p), q);
@@ -68,18 +68,23 @@ int main() {
 
     auto nsp = ndspline_make(quats);
 
-    for (double t = 95; t < 100; t += .001) {
-        arma::vec4 di, di2;
+    for (double t = 95; t < 150; t += .001) {
+        // arma::vec4 i, i2;
+        arma::vec3 di1, di2;
         {
-            arma::vec4 i_l = gyro_integrate(nsp, t, t + 1./30);
-            arma::vec4 i_r = gyro_integrate(nsp, t + 1e-9, t + 1./30 + 1e-9);
-            di = quat_prod(quat_conj(i_l), i_r) / 1e-9;
+            double eps = 1e-7;
+            double win = 1./30;
+            arma::vec4 l = gyro_integrate(nsp, t, t + win);
+            arma::vec4 r = gyro_integrate(nsp, t + eps, t + win + eps);
+            di1 = quat_to_aa(quat_prod(quat_conj(l), r)) / eps;
         }
         {
-            arma::vec4 q_l  = ndspline_eval(nsp, t);
-            arma::vec4 q_r  = ndspline_eval(nsp, t + 1./30);
-            di2 = quat_prod(quat_conj(ndspline_der(nsp, t)), q_r) + quat_prod(quat_conj(q_l), ndspline_der(nsp, t + 1./30));
+            arma::vec4 r  = ndspline_eval(nsp, t);
+            di2 = (quat_prod(quat_conj(r), ndspline_der(nsp, t))).rows(1,3) / arma::norm(r) * 2;
+            // i2 = r;
         }
-        std::cout << t << "," << di[1] << "," << di2[1] << std::endl;
+        std::cout << t << "," << di1[1] << "," << di2[1] << std::endl;
+        // std::cerr << arma::trans(di1) << arma::trans(di2) << std::endl;
+        // std::cout << t << "," << i[1] << "," << i2[1] << std::endl;
     }
 }
