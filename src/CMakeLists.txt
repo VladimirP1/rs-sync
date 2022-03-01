@@ -1,6 +1,6 @@
 find_package(Armadillo CONFIG REQUIRED)
 find_package(OpenCV CONFIG REQUIRED)
 
-add_executable(main main.cpp quat.cpp signal.cpp cv.cpp)
+add_executable(main main.cpp quat.cpp signal.cpp cv.cpp ndspline.cpp)
 
 target_link_libraries(main PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp spline)
