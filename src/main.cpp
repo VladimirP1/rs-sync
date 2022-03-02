@@ -37,195 +37,128 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
     optdata.quats = ndspline::make(quats);
 }
 
-void opt_run(const OptData& data) {
-    double gyro_delay = -.054;
+void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem,
+                         arma::mat& dproblem) {
+    const auto& flow = data.flows.at(frame);
 
-    int i = 0;
-    std::vector<arma::mat> motion(data.flows.size());
-    for (const auto& [_, flow] : data.flows) {
-        arma::mat ap = flow.rows(0, 2);
-        arma::mat bp = flow.rows(3, 5);
-        arma::mat at = (flow.row(6) - data.quats_start + gyro_delay) * data.sample_rate;
-        arma::mat bt = (flow.row(7) - data.quats_start + gyro_delay) * data.sample_rate;
+    arma::mat ap = flow.rows(0, 2);
+    arma::mat bp = flow.rows(3, 5);
+    arma::mat at = (flow.row(6) - data.quats_start + gyro_delay) * data.sample_rate;
+    arma::mat bt = (flow.row(7) - data.quats_start + gyro_delay) * data.sample_rate;
 
-        arma::mat rots(4, at.n_cols);
-        arma::mat brp(3, at.n_cols);
-        arma::mat problem(at.n_cols, 3);
-        arma::mat dproblem(at.n_cols, 3);
-        for (int i = 0; i < at.n_cols; ++i) {
-            // Gyro integration with detivative wrt time offset
-            arma::vec4 a_conj = quat_conj(data.quats.eval(at[i]));
-            arma::vec4 da_conj = quat_conj(data.quats.deriv(at[i]));
-            arma::vec4 b = data.quats.eval(bt[i]);
-            arma::vec4 db = data.quats.deriv(bt[i]);
-            double inv_ab_norm = (1. / arma::norm(a_conj)) * (1. / arma::norm(b));
-            arma::vec4 rot = quat_prod(a_conj, b) * inv_ab_norm;
-            arma::vec4 drot = (quat_prod(da_conj, b) + quat_prod(a_conj, db)) * inv_ab_norm;
-            drot -= drot * arma::dot(rot, drot);
+    problem.resize(at.n_cols, 3);
+    dproblem.resize(at.n_cols, 3);
+    for (int i = 0; i < at.n_cols; ++i) {
+        // Gyro integration with detivative wrt time offset
+        arma::vec4 a_conj = quat_conj(data.quats.eval(at[i]));
+        arma::vec4 da_conj = quat_conj(data.quats.deriv(at[i]));
+        arma::vec4 b = data.quats.eval(bt[i]);
+        arma::vec4 db = data.quats.deriv(bt[i]);
+        double inv_ab_norm = (1. / arma::norm(a_conj)) * (1. / arma::norm(b));
+        arma::vec4 rot = quat_prod(a_conj, b) * inv_ab_norm;
+        arma::vec4 drot = (quat_prod(da_conj, b) + quat_prod(a_conj, db)) * inv_ab_norm;
+        drot -= drot * arma::dot(rot, drot);
 
-            arma::vec3 br = quat_rotate_point(quat_conj(rot), bp.col(i));
-            arma::vec3 t = arma::cross(br, drot.rows(1, 3));
-            problem.row(i) = arma::trans(arma::cross(ap.col(i), br));
-            dproblem.row(i) = arma::trans(arma::cross(ap.col(i), t));
-            brp.col(i) = br;
-            rots.col(i) = rot;
-        }
-
-        if (1) {
-            arma::mat nproblem = problem;
-            nproblem.each_row([](arma::mat& m) { m /= arma::norm(m); });
-
-            arma::mat weights(problem.n_rows, 1);
-            weights = weights.ones();
-            arma::vec3 best_sol;
-            double least_med = std::numeric_limits<double>::infinity();
-            for (int i = 0; i < 200; ++i) {
-                int vs[3];
-                vs[0] = vs[1] = rand() % problem.n_rows;
-                while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
-                while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
-
-                arma::mat v = arma::trans(
-                    arma::normalise(arma::cross(problem.row(vs[0]) - problem.row(vs[1]),
-                                                problem.row(vs[0]) - problem.row(vs[2]))));
-
-                arma::mat residuals = nproblem * v;
-                arma::mat residuals2 = residuals % residuals;
-
-                std::sort(residuals2.begin(), residuals2.end());
-                double med = residuals2(residuals2.n_rows / 4, 0);
-                if (med < least_med) {
-                    least_med = med;
-                    best_sol = v;
-                }
-            }
-            arma::mat residuals = problem * best_sol;
-            arma::mat residuals2 = residuals % residuals;
-            auto k = 1e2;
-            weights = 1. / (1 + (residuals % residuals) * k * k);
-            arma::mat w_residuals = (problem * best_sol) % weights;
-            double cost = arma::dot(w_residuals, w_residuals);
-            // std::cout << cost << std::endl;
-        }
-
-        for (int i = 0; i < problem.n_rows; ++i) {
-            std::cout << problem(i, 0) << " " << problem(i, 1) << " " << problem(i, 2) << " "
-                      << dproblem(i, 0) << " " << dproblem(i, 1) << " " << dproblem(i, 2)
-                      << std::endl;
-        }
-        i++;
-        exit(0);
+        arma::vec3 br = quat_rotate_point(quat_conj(rot), bp.col(i));
+        arma::vec3 t = arma::cross(br, drot.rows(1, 3));
+        problem.row(i) = arma::trans(arma::cross(ap.col(i), br));
+        dproblem.row(i) = arma::trans(arma::cross(ap.col(i), t));
     }
 }
 
+arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
+    arma::mat nproblem = problem;
+    nproblem.each_row([](arma::mat& m) { m /= arma::norm(m); });
+
+    arma::vec3 best_sol;
+    double least_med = std::numeric_limits<double>::infinity();
+    for (int i = 0; i < 200; ++i) {
+        int vs[3];
+        vs[0] = vs[1] = rand() % problem.n_rows;
+        while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
+        while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
+
+        arma::mat v = arma::trans(arma::normalise(arma::cross(
+            problem.row(vs[0]) - problem.row(vs[1]), problem.row(vs[0]) - problem.row(vs[2]))));
+
+        arma::mat residuals = nproblem * v;
+        arma::mat residuals2 = residuals % residuals;
+
+        std::sort(residuals2.begin(), residuals2.end());
+        double med = residuals2(residuals2.n_rows / 4, 0);
+        if (med < least_med) {
+            least_med = med;
+            best_sol = v;
+        }
+    }
+    return best_sol;
+}
+
+arma::mat compute_rho(arma::mat problem, arma::vec3 sol) {
+    static constexpr double k = 1e3;
+
+    arma::mat residuals = problem * sol;
+    arma::mat rho = log(1 + (residuals * k) % (residuals * k)) / (k * k) / 2;
+    return rho;
+}
+
+void opt_run(const OptData& data) {
+    double gyro_delay = -.054;
+
+    static constexpr double k = 1e3;
+
+    std::vector<arma::vec3> motion(data.flows.size());
+    for (int iter = 0; iter < 100; ++iter) {
+        int frame = 0;
+        for (auto& [frame_id, _] : data.flows) {
+            arma::mat problem, dproblem;
+            opt_compute_problem(frame_id, gyro_delay, data, problem, dproblem);
+
+            motion[frame] = motion[frame] * .9 + .1 * opt_guess_translational_motion(problem);
+
+            arma::mat residuals = problem * motion[frame];
+            arma::mat rho = log(1 + (residuals * k) % (residuals * k)) / (k * k) / 2;
+
+            ++frame;
+        }
+    }
+}
+
+std::vector<arma::vec3> motion;
 double cost(const OptData& data, double gyro_delay, double& der_sum) {
     double cost_sum = 0;
     der_sum = 0;
-    int i = 0;
-    std::vector<arma::mat> motion(data.flows.size());
-    for (const auto& [_, flow] : data.flows) {
-        arma::mat ap = flow.rows(0, 2);
-        arma::mat bp = flow.rows(3, 5);
-        arma::mat at = (flow.row(6) - data.quats_start + gyro_delay) * data.sample_rate;
-        arma::mat bt = (flow.row(7) - data.quats_start + gyro_delay) * data.sample_rate;
 
-        arma::mat rots(4, at.n_cols);
-        arma::mat brp(3, at.n_cols);
-        arma::mat problem(at.n_cols, 3);
-        arma::mat dproblem(at.n_cols, 3);
-        for (int i = 0; i < at.n_cols; ++i) {
-            // Gyro integration with detivative wrt time offset
-            arma::vec4 a_conj = quat_conj(data.quats.eval(at[i]));
-            arma::vec4 da_conj = quat_conj(data.quats.deriv(at[i]));
-            arma::vec4 b = data.quats.eval(bt[i]);
-            arma::vec4 db = data.quats.deriv(bt[i]);
-            double inv_ab_norm = (1. / arma::norm(a_conj)) * (1. / arma::norm(b));
-            arma::vec4 rot = quat_prod(a_conj, b) * inv_ab_norm;
-            arma::vec4 drot = (quat_prod(da_conj, b) + quat_prod(a_conj, db)) * inv_ab_norm;
-            drot -= drot * arma::dot(rot, drot);
+    static constexpr double k = 1e3;
 
-            arma::vec3 br = quat_rotate_point(quat_conj(rot), bp.col(i));
-            arma::vec3 t = arma::cross(br, drot.rows(1, 3));
-            problem.row(i) = arma::trans(arma::cross(ap.col(i), br));
-            dproblem.row(i) = arma::trans(arma::cross(ap.col(i), t));
-            brp.col(i) = br;
-            rots.col(i) = rot;
+    bool first_run = motion.empty();
+    motion.resize(data.flows.size());
+
+    for (int iter = 0; iter < 1; ++iter) {
+        int frame = 0;
+        for (auto& [frame_id, _] : data.flows) {
+            arma::mat problem, dproblem;
+            opt_compute_problem(frame_id, gyro_delay, data, problem, dproblem);
+
+            motion[frame] = opt_guess_translational_motion(problem);
+
+            // arma::mat c0 = problem * motion[frame];
+            arma::mat c0 = compute_rho(problem, motion[frame]);
+
+            opt_compute_problem(frame_id, gyro_delay - 1e-7, data, problem, dproblem);
+            // arma::mat c1 = problem * motion[frame];
+            arma::mat c1 = compute_rho(problem, motion[frame]);
+
+            opt_compute_problem(frame_id, gyro_delay + 1e-7, data, problem, dproblem);
+            // arma::mat c2 = problem * motion[frame];
+            arma::mat c2 = compute_rho(problem, motion[frame]);
+
+            // cost_sum += (arma::accu(c0 % c0));
+            // der_sum += ((arma::accu(c2 % c2)) - (arma::accu(c1 % c1))) / 1e-7 / 2;
+            cost_sum += (arma::accu(c0));
+            der_sum += ((arma::accu(c2)) - (arma::accu(c1))) / 1e-7 / 2;
+            ++frame;
         }
-
-        if (0) {
-            arma::mat nproblem = problem;
-            nproblem.each_row([](arma::mat& m) { m /= arma::norm(m); });
-
-            arma::vec3 best_sol;
-            double least_med = std::numeric_limits<double>::infinity();
-            for (int i = 0; i < 200; ++i) {
-                int vs[3];
-                vs[0] = vs[1] = rand() % problem.n_rows;
-                while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
-                while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
-
-                arma::mat v = arma::trans(
-                    arma::normalise(arma::cross(nproblem.row(vs[0]) - nproblem.row(vs[1]),
-                                                nproblem.row(vs[0]) - nproblem.row(vs[2]))));
-
-                arma::mat residuals = nproblem * v;
-                arma::mat residuals2 = residuals % residuals;
-
-                std::sort(residuals2.begin(), residuals2.end());
-                double med = residuals2(residuals2.n_rows / 4, 0);
-                if (med < least_med) {
-                    least_med = med;
-                    best_sol = v;
-                }
-            }
-
-            
-            const double k = 1e3;
-            arma::mat residuals = problem * best_sol;
-            // std::cout << arma::trans(residuals) << std::endl;
-            arma::mat weights = arma::sqrt(1. / (1. + (residuals % residuals) * k * k));
-            // arma::mat weights = k / arma::abs(residuals);
-            // weights.transform([](double& x){ return x > 1 ? 1 : x; });
-            for (int i = 0; i < 20; ++i) {
-                arma::mat U,V;
-                arma::vec S;
-                arma::svd(U,S,V,problem.each_col() % weights);
-                residuals = (problem * V.tail_cols(1));
-                weights = arma::sqrt(1. / (1. + (residuals % residuals) * k * k));
-                // arma::mat weights = k / arma::abs(residuals);
-                // weights.transform([](double& x){ return x > 1 ? 1 : x; });
-            }
-
-            problem = problem.each_col() % weights;
-            dproblem = dproblem.each_col() % weights;
-
-            // std::cerr << S.t() << std::endl;
-
-            // arma::mat residuals = problem * best_sol;
-            // arma::mat residuals2 = residuals % residuals;
-            // auto k = 1e2;
-            // weights = 1. / (1 + (residuals % residuals) * k * k);
-            // arma::mat w_residuals = (problem * best_sol) % weights;
-            // double cost = arma::dot(w_residuals, w_residuals);
-            // cost_sum += cost;
-            // std::cout << cost << std::endl;
-        }
-
-        arma::mat U, V;
-        arma::vec S;
-        arma::svd(U, S, V, problem);
-
-
-        cost_sum += S.tail(1).eval()[0] * S.tail(1).eval()[0];
-        der_sum += (arma::accu((problem * V.tail_cols(1)) % (problem * V.tail_cols(1))));
-        // der_sum += (2*arma::accu((dproblem * V.tail_cols(1))));
-
-        // for (int i = 0; i < problem.n_rows; ++i) {
-        //     std::cout << problem(i, 0) << " " << problem(i, 1) << " " << problem(i, 2) << " "
-        //               << dproblem(i, 0) << " " << dproblem(i, 1) << " " << dproblem(i, 2)
-        //               << std::endl;
-        // }
-        i++;
     }
     return cost_sum;
 }
@@ -239,11 +172,12 @@ int main() {
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 450);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 415);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
 
     // opt_run(opt_data);
 
+    // for (double ofs = -.1; ofs < .1; ofs += 1e-3) {
     for (double ofs = -.065; ofs < -.035; ofs += 1e-4) {
         double der;
         std::cout << ofs << "," << cost(opt_data, ofs, der) << "," << der << std::endl;
