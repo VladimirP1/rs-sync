@@ -41,6 +41,8 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 
 void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem,
                          arma::mat& dproblem) {
+
+    gyro_delay /= 1000;
     const auto& flow = data.flows.at(frame);
 
     arma::mat ap = flow.rows(0, 2);
@@ -58,13 +60,14 @@ void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma
         arma::vec4 db = data.quats.deriv(bt[i]);
         double inv_ab_norm = (1. / arma::norm(a_conj)) * (1. / arma::norm(b));
         arma::vec4 rot = quat_prod(a_conj, b) * inv_ab_norm;
-        arma::vec4 drot = (quat_prod(da_conj, b) + quat_prod(a_conj, db)) * inv_ab_norm;
+        arma::vec4 drot =
+            (quat_prod(da_conj, b) + quat_prod(a_conj, db)) * inv_ab_norm;  // TODO: This is wrong
         drot -= drot * arma::dot(rot, drot);
 
         arma::vec3 br = quat_rotate_point(quat_conj(rot), bp.col(i));
         arma::vec3 t = arma::cross(br, drot.rows(1, 3));
         problem.row(i) = arma::trans(arma::cross(ap.col(i), br));
-        dproblem.row(i) = arma::trans(arma::cross(ap.col(i), t));
+        dproblem.row(i) = arma::trans(arma::cross(ap.col(i), t)) * data.sample_rate;
     }
 }
 
@@ -97,9 +100,9 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
 }
 struct ComputeProblemFunctor {
     ComputeProblemFunctor(int frame, OptData* optdata) : frame_{frame}, optdata_{optdata} {}
-    bool operator()(double const* const* gyro_delay, double* value) const {
+    bool operator()(double const* gyro_delay, double* value) const {
         arma::mat problem(value, optdata_->flows[frame_].n_cols, 3, false, true), dproblem;
-        opt_compute_problem(frame_, **gyro_delay, *optdata_, problem, dproblem);
+        opt_compute_problem(frame_, *gyro_delay, *optdata_, problem, dproblem);
         return true;
     }
 
@@ -109,26 +112,21 @@ struct ComputeProblemFunctor {
 };
 
 struct FrameCostFunction {
-    FrameCostFunction(int frame, OptData* optdata) : frame_{frame}, optdata_{optdata} {
-        auto problem_function = new ceres::DynamicNumericDiffCostFunction<ComputeProblemFunctor, ceres::RIDDERS>(
-            new ComputeProblemFunctor(frame_, optdata_));
-        problem_function->AddParameterBlock(1);
-        problem_function->SetNumResiduals(optdata->flows[frame_].n_cols * 3);
-        problem_functor_.reset(new ceres::DynamicCostFunctionToFunctor(problem_function));
-    }
+    FrameCostFunction(int frame, OptData* optdata)
+        : frame_{frame}, optdata_{optdata}, problem_functor_(frame, optdata) {}
 
-    template <typename T>
-    bool operator()(const T* gyro_delay, const T* motion_raw, T* residual) const {
-        Eigen::Matrix<T, Eigen::Dynamic, 3, Eigen::ColMajor> problem(optdata_->flows[frame_].n_cols,
-                                                                     3);
-        problem_functor_->operator()(&gyro_delay, problem.data());
+    bool operator()(const double* gyro_delay, const double* motion_raw, double* residual) const {
+        Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::ColMajor> problem(
+            optdata_->flows[frame_].n_cols, 3);
+        problem_functor_.operator()(gyro_delay, problem.data());
 
-        Eigen::Matrix<T, 3, 1> motion(motion_raw);
+        Eigen::Matrix<double, 3, 1> motion(motion_raw);
 
         static constexpr double k = 1e3;
-        Eigen::Array<T, Eigen::Dynamic, 1> r = (problem * (motion / motion.norm())).array() * T{k};
+        Eigen::Array<double, Eigen::Dynamic, 1> r =
+            (problem * (motion / motion.norm())).array() * k;
 
-        Eigen::Matrix<T, Eigen::Dynamic, 1> rho = log(T{1} + (r * r)) / T{2};
+        Eigen::Matrix<double, Eigen::Dynamic, 1> rho = log(1 + (r * r)) / 2;
         // Eigen::Matrix<T, Eigen::Dynamic, 1> rho = r * r / (T{2} * (T{1} + r * r));
         // Eigen::Matrix<T, Eigen::Dynamic, 1> rho = r * r;
 
@@ -139,8 +137,8 @@ struct FrameCostFunction {
 
     void GuessMotion(double gyro_delay) {
         arma::mat problem(optdata_->flows[frame_].n_cols, 3);
-        double* g = &gyro_delay;
-        problem_functor_->operator()(&g, problem.memptr());
+        // double* g = &gyro_delay;
+        problem_functor_.operator()(&gyro_delay, problem.memptr());
         motion_vec = opt_guess_translational_motion(problem);
     }
 
@@ -150,7 +148,7 @@ struct FrameCostFunction {
     int frame_;
     OptData* optdata_;
 
-    std::unique_ptr<ceres::DynamicCostFunctionToFunctor> problem_functor_;
+    ComputeProblemFunctor problem_functor_;
 };
 
 arma::mat compute_rho(arma::mat problem, arma::vec3 sol) {
@@ -162,7 +160,7 @@ arma::mat compute_rho(arma::mat problem, arma::vec3 sol) {
 }
 
 void opt_run(OptData& data) {
-    double gyro_delay = -.03;
+    double gyro_delay = -47;
     ceres::Problem p;
 
     ceres::Solver::Options options;
@@ -170,30 +168,30 @@ void opt_run(OptData& data) {
     options.minimizer_progress_to_stdout = true;
     options.max_num_iterations = 500;
     // options.use_inner_iterations = true;
-    // options.use_nonmonotonic_steps = true;
+    options.use_nonmonotonic_steps = true;
     // options.inner_iteration_tolerance = 1e-4;
-    // // options.max_trust_region_radius = 1e-3;
-    // options.function_tolerance = 1e-9;
+    // options.max_trust_region_radius = 1e-3;
+    options.function_tolerance = 1e-9;
     // options.initial_trust_region_radius = 1e-4;
     // options.num_threads = 8;
-    // options.logging_type = ceres::SILENT;
+    options.logging_type = ceres::SILENT;
     options.minimizer_type = ceres::LINE_SEARCH;
-    options.check_gradients = true;
+    // options.check_gradients = true;
 
     std::vector<FrameCostFunction*> costs;
     for (auto& [frame, _] : data.flows) {
         auto raw_cost_func = new FrameCostFunction(frame, &data);
         costs.push_back(raw_cost_func);
         ceres::CostFunction* frame_cost =
-            new ceres::AutoDiffCostFunction<FrameCostFunction, 1, 1, 3>(raw_cost_func);
+            new ceres::NumericDiffCostFunction<FrameCostFunction, ceres::FORWARD, 1, 1, 3>(raw_cost_func);
         raw_cost_func->GuessMotion(gyro_delay);
         p.AddResidualBlock(frame_cost, nullptr, &gyro_delay, raw_cost_func->motion_vec.memptr());
     }
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 20; i++) {
         ceres::Solver::Summary summary;
         ceres::Solve(options, &p, &summary);
-        std::cout << summary.FullReport() << "\n";
+        // std::cout << summary.FullReport() << "\n";
         std::cout << gyro_delay << " " << summary.final_cost << std::endl;
 
         for (auto raw_cost : costs) {
@@ -261,8 +259,14 @@ int main() {
 
     // for (double ofs = -.1; ofs < .1; ofs += 1e-3) {
     // for (double ofs = -.065; ofs < -.035; ofs += 1e-4) {
-    //     double der;
-    //     std::cout << ofs << "," << cost(opt_data, ofs, der) << "," << der << std::endl;
+    //     // double der;
+    //     // std::cout << ofs << "," << cost(opt_data, ofs, der) << "," << der << std::endl;
+    //     arma::mat p,dp;
+    //     opt_compute_problem(300, ofs + 1e-7, opt_data, p, dp);
+    //     double r = p[2];
+    //     opt_compute_problem(300, ofs, opt_data, p, dp);
+    //     double l = p[2];
+    //     std::cout << ofs << "," << dp[2] << "," << (r - l) / 1e-7 << std::endl;
     // }
     // arma::vec4 a_conj = quat_conj(nsp.eval(t_left));
     // arma::vec4 b = nsp.eval(t_right);
