@@ -41,7 +41,6 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 
 void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem,
                          arma::mat& dproblem) {
-
     gyro_delay /= 1000;
     const auto& flow = data.flows.at(frame);
 
@@ -111,26 +110,86 @@ struct ComputeProblemFunctor {
     OptData* optdata_;
 };
 
-struct FrameCostFunction {
-    FrameCostFunction(int frame, OptData* optdata)
+struct FrameState : public ceres::SizedCostFunction<1, 1, 3> {
+    FrameState(int frame, OptData* optdata)
         : frame_{frame}, optdata_{optdata}, problem_functor_(frame, optdata) {}
 
-    bool operator()(const double* gyro_delay, const double* motion_raw, double* residual) const {
-        Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::ColMajor> problem(
-            optdata_->flows[frame_].n_cols, 3);
-        problem_functor_.operator()(gyro_delay, problem.data());
+    static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
+        return {x % x, arma::diagmat(2. * x)};
+    }
 
-        Eigen::Matrix<double, 3, 1> motion(motion_raw);
+    static std::tuple<arma::mat, arma::mat> sqrt_jac(arma::mat x) {
+        x = arma::sqrt(x);
+        return {x, arma::diagmat(1. / (2. * x))};
+    }
 
-        static constexpr double k = 1e3;
-        Eigen::Array<double, Eigen::Dynamic, 1> r =
-            (problem * (motion / motion.norm())).array() * k;
+    static std::tuple<arma::mat, arma::mat> log1p_jac(arma::mat x) {
+        return {arma::log1p(x), arma::diagmat(1. / (1. + x))};
+    }
 
-        Eigen::Matrix<double, Eigen::Dynamic, 1> rho = log(1 + (r * r)) / 2;
-        // Eigen::Matrix<T, Eigen::Dynamic, 1> rho = r * r / (T{2} * (T{1} + r * r));
-        // Eigen::Matrix<T, Eigen::Dynamic, 1> rho = r * r;
+    static std::tuple<arma::mat, arma::mat> sum_jac(arma::mat x) {
+        arma::mat d(1, x.n_rows);
+        d.ones();
+        return {arma::sum(x), d};
+    }
 
-        residual[0] = rho.sum();
+    static std::tuple<arma::mat, arma::mat, arma::mat> div_jac(arma::mat x, double y) {
+        arma::mat dx(x.n_rows, x.n_rows);
+        dx.eye();
+        return {x / y, dx / y, -x / (y * y)};
+    }
+
+    static double calc(arma::mat P, arma::mat M, double k) {
+        auto [v1, j1] = std::make_tuple(P * M, P);
+        auto [v2, j2] = sqr_jac(v1);
+
+        auto [v3, j3] = sqr_jac(M);
+        auto [v4, j4] = sum_jac(v3);
+        auto [v5, j5, _] = div_jac(v4, k * k);
+
+        auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
+        auto [v7, j7] = log1p_jac(v6);
+        auto [v8, j8] = sum_jac(v7);
+
+        return v8[0];
+    }
+
+    bool Evaluate(double const* const* parameters, double* residuals,
+                  double** jacobians) const override {
+        const double* gyro_delay = parameters[0];
+        const double* motion_raw = parameters[1];
+        arma::mat M(motion_raw, 3, 1);
+
+        arma::mat P, P2, tmp;
+
+        opt_compute_problem(frame_, *gyro_delay, *optdata_, P, tmp);
+        opt_compute_problem(frame_, *gyro_delay + kStep, *optdata_, P2, tmp);
+
+        double r1 = calc(P, M, k);
+        double r2 = calc(P2, M, k);
+
+        auto [v1, j1] = std::make_tuple(P * M, P);
+        auto [v2, j2] = sqr_jac(v1);
+
+        auto [v3, j3] = sqr_jac(M);
+        auto [v4, j4] = sum_jac(v3);
+        auto [v5, j5, _] = div_jac(v4, k * k);
+
+        auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
+        auto [v7, j7] = log1p_jac(v6);
+        auto [v8, j8] = sum_jac(v7);
+
+        residuals[0] = v8[0];
+
+        if (jacobians) {
+            if (jacobians[0]) {
+                jacobians[0][0] = (r2 - r1) / kStep;
+            }
+            if (jacobians[1]) {
+                arma::mat drho_dM(jacobians[1], 1, 3, false, true);
+                drho_dM = j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
+            }
+        }
 
         return true;
     }
@@ -145,6 +204,9 @@ struct FrameCostFunction {
     arma::vec3 motion_vec;
 
    private:
+    static constexpr double k = 1e3;
+    static constexpr double kStep = 1e-5;
+
     int frame_;
     OptData* optdata_;
 
@@ -178,12 +240,14 @@ void opt_run(OptData& data) {
     options.minimizer_type = ceres::LINE_SEARCH;
     // options.check_gradients = true;
 
-    std::vector<FrameCostFunction*> costs;
+    std::vector<FrameState*> costs;
     for (auto& [frame, _] : data.flows) {
-        auto raw_cost_func = new FrameCostFunction(frame, &data);
+        auto raw_cost_func = new FrameState(frame, &data);
         costs.push_back(raw_cost_func);
-        ceres::CostFunction* frame_cost =
-            new ceres::NumericDiffCostFunction<FrameCostFunction, ceres::FORWARD, 1, 1, 3>(raw_cost_func);
+        // ceres::CostFunction* frame_cost =
+        //     new ceres::NumericDiffCostFunction<FrameCostFunction, ceres::FORWARD, 1, 1, 3>(
+        //         raw_cost_func);
+        ceres::CostFunction* frame_cost = raw_cost_func;
         raw_cost_func->GuessMotion(gyro_delay);
         p.AddResidualBlock(frame_cost, nullptr, &gyro_delay, raw_cost_func->motion_vec.memptr());
     }

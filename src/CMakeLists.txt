@@ -13,3 +13,5 @@ target_link_libraries(arma PRIVATE ${ARMADILLO_LIBRARIES})
 add_executable(c ceres.cpp quat.cpp signal.cpp cv.cpp ndspline.cpp)
 target_link_libraries(c PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} Ceres::ceres telemetry_parser_cpp spline)
 
+add_executable(gd simple_gd.cpp quat.cpp signal.cpp cv.cpp ndspline.cpp)
+target_link_libraries(gd PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp spline)
