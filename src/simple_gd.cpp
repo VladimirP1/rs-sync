@@ -116,10 +116,10 @@ struct FrameState {
         return true;
     }
 
-    void GuessMotion(double gyro_delay) {
+    arma::vec3 GuessMotion(double gyro_delay) {
         arma::mat problem;
         opt_compute_problem(frame_, gyro_delay, *optdata_, problem);
-        motion_vec = opt_guess_translational_motion(problem);
+        return opt_guess_translational_motion(problem);
     }
 
     arma::vec3 motion_vec;
@@ -166,42 +166,51 @@ struct FrameState {
 
 void opt_run(OptData& data) {
     arma::mat gyro_delay(1, 1);
-    gyro_delay[0] = -40;
+    gyro_delay[0] = -47;
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
         costs.push_back(std::make_unique<FrameState>(frame, &data));
-        costs.back()->GuessMotion(gyro_delay[0]);
+        costs.back()->motion_vec = costs.back()->GuessMotion(gyro_delay[0]);
         costs.back()->opt_tmp_data.resize(3, 1);
         costs.back()->opt_tmp_data.zeros();
     }
 
-    // NAG + momentum
-    constexpr double delay_b{.6}, delay_eta{1e-2};
-    arma::mat delay_v(1, 1);
+    constexpr double delay_lr = 1e-4;
+    constexpr double motion_lr = 1e-4;
 
-    for (int i = 0; i < 2000; i++) {
+    for (int i = 0; i < 9000; i++) {
         arma::mat cost(1, 1), delay_g(1, 1);
         for (auto& fs : costs) {
             arma::mat cur_cost, cur_delay_g;
-            for (int j = 0; j < 10; ++j) {
+            for (int j = 0; j < 1; ++j) {
                 arma::mat motion_jac;
-                // NAG + momentum
-                constexpr double motion_b{.8}, motion_eta{1e-4};
-                arma::mat& motion_v = fs->opt_tmp_data;
 
-                fs->Cost(gyro_delay - delay_b * delay_v, fs->motion_vec - motion_b * motion_v,
-                         cur_cost, cur_delay_g, motion_jac);
+                fs->Cost(gyro_delay, fs->motion_vec, cur_cost, cur_delay_g, motion_jac);
 
-                motion_v = motion_b * motion_v + motion_eta * motion_jac.t();
-                fs->motion_vec -= motion_v;
+
+                // if (i < 2000) {
+                //     if (rand() % 1000 < 4) {
+                //         arma::mat c, t1, t2;
+                //         arma::vec3 new_motion = fs->GuessMotion(gyro_delay[0]);
+                //         fs->Cost(gyro_delay, new_motion, c, t1, t2);
+                //         if (c[0] < cur_cost[0]) {
+                //             cur_cost = c;
+                //             fs->motion_vec = new_motion;
+                //             cur_delay_g = t1;
+                //             motion_jac = t2;
+                //         }
+                //     }
+                // }
+
+                fs->motion_vec -= motion_jac.t() * motion_lr;
             }
 
             cost += cur_cost;
             delay_g += cur_delay_g;
         }
-        delay_v = delay_b * delay_v + delay_eta * delay_g;
-        gyro_delay -= delay_v;
+
+        gyro_delay -= delay_lr * delay_g;
 
         // if (i%100 == 0)
         std::cout << gyro_delay[0] << " " << cost[0] << std::endl;
