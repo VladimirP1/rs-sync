@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
-#include <chrono>
 
 #include "ndspline.hpp"
 #include "quat.hpp"
@@ -9,8 +8,6 @@
 #include "cv.hpp"
 
 #include <telemetry-parser.h>
-
-#include <spline.hpp>
 
 struct OptData {
     double quats_start{};
@@ -90,13 +87,14 @@ struct FrameState {
 
     bool Cost(const arma::mat& gyro_delay, const arma::mat& M, arma::mat& cost,
               arma::mat& jac_gyro_delay, arma::mat& jac_M) const {
-        arma::mat P, P2;
+        arma::mat P, PL, PR;
 
         opt_compute_problem(frame_, gyro_delay[0], *optdata_, P);
-        opt_compute_problem(frame_, gyro_delay[0] + kStep, *optdata_, P2);
+        opt_compute_problem(frame_, gyro_delay[0] - kStep, *optdata_, PL);
+        opt_compute_problem(frame_, gyro_delay[0] + kStep, *optdata_, PR);
 
-        double r1 = calc(P, M, k);
-        double r2 = calc(P2, M, k);
+        double r1 = calc(PL, M, k);
+        double r2 = calc(PR, M, k);
 
         auto [v1, j1] = std::make_tuple(P * M, P);
         auto [v2, j2] = sqr_jac(v1);
@@ -111,7 +109,7 @@ struct FrameState {
 
         cost = v8;
 
-        jac_gyro_delay = (r2 - r1) / kStep;
+        jac_gyro_delay = (r2 - r1) / 2 / kStep;
 
         jac_M = j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
 
@@ -125,10 +123,11 @@ struct FrameState {
     }
 
     arma::vec3 motion_vec;
+    arma::mat opt_tmp_data;
 
    private:
     static constexpr double k = 1e3;
-    static constexpr double kStep = 1e-5;
+    static constexpr double kStep = 1e-6;
 
     int frame_;
     OptData* optdata_;
@@ -167,28 +166,44 @@ struct FrameState {
 
 void opt_run(OptData& data) {
     arma::mat gyro_delay(1, 1);
-    gyro_delay[0] = -47;
+    gyro_delay[0] = -40;
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
         costs.push_back(std::make_unique<FrameState>(frame, &data));
         costs.back()->GuessMotion(gyro_delay[0]);
+        costs.back()->opt_tmp_data.resize(3, 1);
+        costs.back()->opt_tmp_data.zeros();
     }
 
-    constexpr double delay_lr = 1e-3;
-    constexpr double motion_lr = 1e-3;
+    // NAG + momentum
+    constexpr double delay_b{.6}, delay_eta{1e-2};
+    arma::mat delay_v(1, 1);
 
-    for (int i = 0; i < 20000; i++) {
+    for (int i = 0; i < 2000; i++) {
         arma::mat cost(1, 1), delay_g(1, 1);
         for (auto& fs : costs) {
-            arma::mat cur_cost, cur_delay_g, cur_motion_jac;
-            fs->Cost(gyro_delay, fs->motion_vec, cur_cost, cur_delay_g, cur_motion_jac);
+            arma::mat cur_cost, cur_delay_g;
+            for (int j = 0; j < 10; ++j) {
+                arma::mat motion_jac;
+                // NAG + momentum
+                constexpr double motion_b{.8}, motion_eta{1e-4};
+                arma::mat& motion_v = fs->opt_tmp_data;
+
+                fs->Cost(gyro_delay - delay_b * delay_v, fs->motion_vec - motion_b * motion_v,
+                         cur_cost, cur_delay_g, motion_jac);
+
+                motion_v = motion_b * motion_v + motion_eta * motion_jac.t();
+                fs->motion_vec -= motion_v;
+            }
+
             cost += cur_cost;
             delay_g += cur_delay_g;
-            fs->motion_vec -= motion_lr * cur_motion_jac.t();
         }
-        gyro_delay -= delay_lr * delay_g;
-        if (i%100 == 0)
+        delay_v = delay_b * delay_v + delay_eta * delay_g;
+        gyro_delay -= delay_v;
+
+        // if (i%100 == 0)
         std::cout << gyro_delay[0] << " " << cost[0] << std::endl;
     }
 }
@@ -201,9 +216,10 @@ int main() {
     optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 450);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 450);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 1400, 1430);
 
     opt_run(opt_data);
 }
