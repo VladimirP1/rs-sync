@@ -35,8 +35,8 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 }
 
 void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem) {
-    gyro_delay /= 1000;
     const auto& flow = data.flows.at(frame);
+    gyro_delay /= 1000;
 
     arma::mat ap = flow.rows(0, 2);
     arma::mat bp = flow.rows(3, 5);
@@ -116,6 +116,13 @@ struct FrameState {
         return true;
     }
 
+    bool CostOnly(const arma::mat& gyro_delay, const arma::mat& M, arma::mat& cost) const {
+        arma::mat P;
+        opt_compute_problem(frame_, gyro_delay[0], *optdata_, P);
+        cost = {calc(P, M, k)};
+        return true;
+    }
+
     arma::vec3 GuessMotion(double gyro_delay) {
         arma::mat problem;
         opt_compute_problem(frame_, gyro_delay, *optdata_, problem);
@@ -164,20 +171,26 @@ struct FrameState {
     }
 };
 
+struct backtrack_hyper {
+    double c{.7};
+    double tau{.1};
+    double limit{20};
+    double step_init{1};
+};
+
 static arma::vec backtrack(std::function<std::tuple<double, arma::vec>(arma::vec)> f,
-                           arma::vec x0) {
-    static constexpr double c = .7;
-    static constexpr double tau = .1;
-    static constexpr int limit = 20;
+                           std::function<double(arma::vec)> f_vonly, arma::vec x0,
+                           backtrack_hyper hyper = {}) {
+    if (!f_vonly) f_vonly = [&](arma::vec x) { return std::get<0>(f(x)); };
 
     auto [v, p] = f(x0);
     double m = arma::dot(p, p);
-    double t = 1;
-    for (int i = 0; i < limit; ++i) {
-        auto [v1, m1] = f(x0 - t * p);
+    double t = hyper.step_init;
+    for (int i = 0; i < hyper.limit; ++i) {
+        auto v1 = f_vonly(x0 - t * p);
         // std::cout << v << " " << v1 << std::endl;
-        if (v - v1 >= t * c * m) break;
-        t *= tau;
+        if (v - v1 >= t * hyper.c * m) break;
+        t *= hyper.tau;
         // if (i == limit - 1) std::cout << "armijo fail" << std::endl;
     }
     // std::cout << t << std::endl;
@@ -187,6 +200,12 @@ static arma::vec backtrack(std::function<std::tuple<double, arma::vec>(arma::vec
 void opt_run(OptData& data) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = -47;
+
+    static constexpr backtrack_hyper motion_hyper = {
+        .c = .7, .tau = .1, .limit = 20, .step_init = 1e-2};
+
+    static constexpr backtrack_hyper delay_hyper = {
+        .c = .2, .tau = .1, .limit = 6, .step_init = 1};
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
@@ -201,6 +220,7 @@ void opt_run(OptData& data) {
 
     for (int i = 0; i < 9000; i++) {
         // Optimize motion
+
         for (auto& fs : costs) {
             for (int j = 0; j < 5; ++j) {
                 fs->motion_vec += backtrack(
@@ -209,7 +229,12 @@ void opt_run(OptData& data) {
                         fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
                         return std::make_pair(cost[0], arma::vec{mot_jac.t()});
                     },
-                    fs->motion_vec);
+                    [&](arma::vec x) {
+                        arma::mat cost;
+                        fs->CostOnly(gyro_delay, x, cost);
+                        return cost[0];
+                    },
+                    fs->motion_vec, motion_hyper);
             }
         }
 
@@ -224,12 +249,21 @@ void opt_run(OptData& data) {
             }
             return std::make_pair(cost[0], delay_g);
         };
-        arma::mat bt = backtrack(f, gyro_delay - delay_b * delay_v);
+        auto f_only = [&](arma::vec x) {
+            arma::mat cost(1, 1), delay_g(1, 1);
+            for (auto& fs : costs) {
+                arma::mat cur_cost;
+                fs->CostOnly(x, fs->motion_vec, cur_cost);
+                cost += cur_cost;
+            }
+            return cost[0];
+        };
+        arma::mat bt = backtrack(f, f_only, gyro_delay - delay_b * delay_v, delay_hyper);
 
         delay_v = delay_b * delay_v + bt;
         gyro_delay += delay_v;
 
-        std::cout << gyro_delay[0] << " " << std::get<0>(f(gyro_delay)) << " " << std::endl;
+        std::cout << gyro_delay[0] << " " << f_only(gyro_delay) << " " << std::endl;
 
         if (i % 100 == 0) {
             std::cout << "re-guess" << std::endl;
@@ -249,8 +283,8 @@ int main() {
     optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 500);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 500);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1400, 1430);
 
