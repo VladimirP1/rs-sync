@@ -235,6 +235,7 @@ void opt_run(OptData& data) {
     // options.max_trust_region_radius = 1e-3;
     options.function_tolerance = 1e-9;
     // options.initial_trust_region_radius = 1e-4;
+    options.line_search_sufficient_function_decrease = .2;
     // options.num_threads = 8;
     options.logging_type = ceres::SILENT;
     options.minimizer_type = ceres::LINE_SEARCH;
@@ -315,7 +316,7 @@ int main() {
     optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 300, 330);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 450);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 450);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
 
