@@ -342,7 +342,7 @@ void plot_run(OptData& data) {
 }
 
 int main() {
-    std::cout << std::fixed << std::setprecision(3);
+    std::cout << std::fixed << std::setprecision(16);
 
     OptData opt_data;
     // YXZ zYX

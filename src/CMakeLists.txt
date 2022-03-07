@@ -18,3 +18,6 @@ target_link_libraries(c PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} Ceres
 
 add_executable(gd simple_gd.cpp quat.cpp signal.cpp cv.cpp ndspline.cpp)
 target_link_libraries(gd PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp spline)
+
+add_executable(only_plot only_plot.cpp quat.cpp signal.cpp cv.cpp ndspline.cpp)
+target_link_libraries(only_plot PRIVATE ${ARMADILLO_LIBRARIES} ${OpenCV_LIBRARIES} telemetry_parser_cpp spline)
