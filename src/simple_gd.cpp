@@ -130,14 +130,13 @@ struct FrameState {
 
         auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
         auto [v7, j7] = log1p_jac(v6);
-        auto [v8, j8] = sqrt_jac(v7);
-        auto [v9, j9] = sum_jac(v8);
+        auto [v8, j8] = sum_jac(v7);
 
-        cost = v9;
+        cost = v8;
 
         jac_gyro_delay = (r2 - r1) / 2 / kStep;
 
-        jac_M = j9 * j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
+        jac_M = j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
 
         return true;
     }
@@ -159,8 +158,8 @@ struct FrameState {
     arma::mat opt_tmp_data;
 
    private:
-    static constexpr double k = 1e2;
-    static constexpr double kStep = 1e-4;
+    static constexpr double k = 1e3;
+    static constexpr double kStep = 1e-6;
 
     int frame_;
     OptData* optdata_;
@@ -168,7 +167,7 @@ struct FrameState {
     static double calc(arma::mat P, arma::mat M, double k) {
         arma::mat r = (P * M) * (k / arma::norm(M));
         arma::mat rho = arma::log1p(r % r);
-        return arma::accu(arma::sqrt(rho));
+        return arma::accu(rho);
     }
 
     static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
