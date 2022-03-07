@@ -238,10 +238,10 @@ opt_result opt_run(OptData& data, double initial_delay) {
     gyro_delay[0] = initial_delay;
 
     static constexpr backtrack_hyper motion_hyper = {
-        .c = .7, .tau = .1, .limit = 20, .step_init = 1e-2};
+        .c = 1e-4, .tau = .1, .limit = 20, .step_init = 1e-2};
 
     static constexpr backtrack_hyper delay_hyper = {
-        .c = .2, .tau = .1, .limit = 10, .step_init = 1};
+        .c = .1e-4, .tau = .1, .limit = 10, .step_init = 1};
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
@@ -346,10 +346,10 @@ int main() {
     optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 250, 300);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 900, 900 + 120);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 430);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1400, 1430);
-    double delay = -46;
+    double delay = -35;
     for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
 }
