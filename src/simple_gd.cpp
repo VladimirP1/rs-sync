@@ -164,6 +164,26 @@ struct FrameState {
     }
 };
 
+static arma::vec backtrack(std::function<std::tuple<double, arma::vec>(arma::vec)> f,
+                           arma::vec x0) {
+    static constexpr double c = .7;
+    static constexpr double tau = .1;
+    static constexpr int limit = 20;
+
+    auto [v, p] = f(x0);
+    double m = arma::dot(p, p);
+    double t = 1;
+    for (int i = 0; i < limit; ++i) {
+        auto [v1, m1] = f(x0 - t * p);
+        // std::cout << v << " " << v1 << std::endl;
+        if (v - v1 >= t * c * m) break;
+        t *= tau;
+        // if (i == limit - 1) std::cout << "armijo fail" << std::endl;
+    }
+    // std::cout << t << std::endl;
+    return x0 - t * p;
+}
+
 void opt_run(OptData& data) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = -47;
@@ -176,44 +196,40 @@ void opt_run(OptData& data) {
         costs.back()->opt_tmp_data.zeros();
     }
 
-    constexpr double delay_lr = 1e-4;
+    constexpr double delay_lr = 1e-3;
     constexpr double motion_lr = 1e-4;
 
     for (int i = 0; i < 9000; i++) {
-        arma::mat cost(1, 1), delay_g(1, 1);
+        // Optimize motion
         for (auto& fs : costs) {
-            arma::mat cur_cost, cur_delay_g;
             for (int j = 0; j < 1; ++j) {
-                arma::mat motion_jac;
-
-                fs->Cost(gyro_delay, fs->motion_vec, cur_cost, cur_delay_g, motion_jac);
-
-
-                // if (i < 2000) {
-                //     if (rand() % 1000 < 4) {
-                //         arma::mat c, t1, t2;
-                //         arma::vec3 new_motion = fs->GuessMotion(gyro_delay[0]);
-                //         fs->Cost(gyro_delay, new_motion, c, t1, t2);
-                //         if (c[0] < cur_cost[0]) {
-                //             cur_cost = c;
-                //             fs->motion_vec = new_motion;
-                //             cur_delay_g = t1;
-                //             motion_jac = t2;
-                //         }
-                //     }
-                // }
-
-                fs->motion_vec -= motion_jac.t() * motion_lr;
+                fs->motion_vec = backtrack(
+                    [&](arma::vec x) {
+                        arma::mat cost, del_jac, mot_jac;
+                        fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
+                        return std::make_pair(cost[0], arma::vec{mot_jac.t()});
+                    },
+                    fs->motion_vec);
             }
-
-            cost += cur_cost;
-            delay_g += cur_delay_g;
         }
 
-        gyro_delay -= delay_lr * delay_g;
+        // Optimize delay
+        gyro_delay = backtrack(
+            [&](arma::vec x) {
+                arma::mat cost(1, 1), delay_g(1, 1);
+                for (auto& fs : costs) {
+                    arma::mat cur_cost, cur_delay_g, tmp;
+                    fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
+                    cost += cur_cost;
+                    delay_g += cur_delay_g;
+                }
+                return std::make_pair(cost[0], delay_g);
+            },
+            gyro_delay);
+
 
         // if (i%100 == 0)
-        std::cout << gyro_delay[0] << " " << cost[0] << std::endl;
+        std::cout << gyro_delay[0] << std::endl;
     }
 }
 
