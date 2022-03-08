@@ -9,6 +9,14 @@
 
 #include <telemetry-parser.h>
 
+arma::mat safe_normalize(arma::mat m) {
+    double norm = arma::norm(m);
+    if (norm < 1e-12) {
+        return m;
+    }
+    return m / norm;
+}
+
 struct OptData {
     double quats_start{};
     int sample_rate{};
@@ -56,7 +64,7 @@ void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma
 
 arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
     arma::mat nproblem = problem;
-    nproblem.each_row([](arma::mat& m) { m /= arma::norm(m); });
+    nproblem.each_row([](arma::mat& m) { m = safe_normalize(m); });
 
     arma::vec3 best_sol;
     double least_med = std::numeric_limits<double>::infinity();
@@ -66,7 +74,7 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
         while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
         while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
 
-        arma::mat v = arma::trans(arma::normalise(arma::cross(
+        arma::mat v = arma::trans(safe_normalize(arma::cross(
             problem.row(vs[0]) - problem.row(vs[1]), problem.row(vs[0]) - problem.row(vs[2]))));
 
         arma::mat residuals = nproblem * v;
@@ -74,31 +82,6 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
 
         std::sort(residuals2.begin(), residuals2.end());
         double med = residuals2(residuals2.n_rows / 4, 0);
-        if (med < least_med) {
-            least_med = med;
-            best_sol = v;
-        }
-    }
-    return best_sol;
-}
-
-arma::vec3 opt_guess_translational_motion2(const arma::mat& problem) {
-    arma::vec3 best_sol;
-    static constexpr double k = 1e3;
-    double least_med = std::numeric_limits<double>::infinity();
-    for (int i = 0; i < 200; ++i) {
-        int vs[3];
-        vs[0] = vs[1] = rand() % problem.n_rows;
-        while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
-        while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
-
-        arma::mat v = arma::trans(arma::normalise(arma::cross(
-            problem.row(vs[0]) - problem.row(vs[1]), problem.row(vs[0]) - problem.row(vs[2]))));
-
-        arma::mat r = (problem * v) * k;
-        arma::mat rho = arma::log1p(r % r);
-
-        double med = arma::accu(rho);
         if (med < least_med) {
             least_med = med;
             best_sol = v;
@@ -130,7 +113,7 @@ struct FrameState {
 
         auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
         auto [v7, j7] = log1p_jac(v6);
-        auto [v8, j8] = sqrt_jac(v7);
+        auto [v8, j8] = sqrt_jac(v7 + kSqrtEps);
         auto [v9, j9] = sum_jac(v8);
 
         cost = v9;
@@ -163,6 +146,7 @@ struct FrameState {
    private:
     static constexpr double k = 1e3;
     static constexpr double kStep = 1e-6;
+    static constexpr double kSqrtEps = 1;
 
     int frame_;
     OptData* optdata_;
@@ -170,7 +154,7 @@ struct FrameState {
     static double calc(arma::mat P, arma::mat M, double k) {
         arma::mat r = (P * M) * (k / arma::norm(M));
         arma::mat rho = arma::log1p(r % r);
-        return arma::accu(arma::sqrt(rho));
+        return arma::accu(arma::sqrt(rho + kSqrtEps));
     }
 
     static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
@@ -236,63 +220,121 @@ struct opt_result {
     double cost;
 };
 
-opt_result opt_run(OptData& data, double initial_delay) {
+opt_result opt_run(OptData& data, double initial_delay,
+                   int min_frame = std::numeric_limits<int>::min(),
+                   int max_frame = std::numeric_limits<int>::max()) {
+    arma::mat gyro_delay(1, 1);
+    gyro_delay[0] = initial_delay;
+
     static constexpr backtrack_hyper motion_hyper = {
-        .c = 1e-4, .tau = .1, .limit = 20, .step_init = 1e-2};
+        .c = .7, .tau = .1, .limit = 20, .step_init = 1e-2};
 
     static constexpr backtrack_hyper delay_hyper = {
-        .c = .1e-4, .tau = .1, .limit = 10, .step_init = 1};
+        .c = .2, .tau = .1, .limit = 10, .step_init = 1};
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
+        if (frame < min_frame || frame > max_frame) continue;
         costs.push_back(std::make_unique<FrameState>(frame, &data));
-        costs.back()->motion_vec = costs.back()->GuessMotion(initial_delay);
+        costs.back()->motion_vec = costs.back()->GuessMotion(gyro_delay[0]);
         costs.back()->opt_tmp_data.resize(3, 1);
         costs.back()->opt_tmp_data.zeros();
-        costs.back()->gyro_delay = initial_delay;
     }
 
-    for (int i = 0; i < 1000; ++i) {
+    struct delay_opt_info {
+        double step_size;
+    };
+
+    constexpr double delay_b{.3};
+    arma::mat delay_v(1, 1);
+    auto do_opt_motion = [&]() {
         for (auto& fs : costs) {
-            auto f = [&](arma::vec x) {
-                arma::mat cost, del_jac, mot_jac;
-                fs->Cost(fs->gyro_delay, x, cost, del_jac, mot_jac);
-                return std::make_pair(cost[0], arma::vec{mot_jac.t()});
-            };
-            auto f_only = [&](arma::vec x) {
-                arma::mat cost;
-                fs->CostOnly(fs->gyro_delay, x, cost);
-                return cost[0];
-            };
-
-            auto del_f = [&](arma::vec x) {
-                arma::mat cost, del_jac, mot_jac;
-                fs->Cost(x, fs->motion_vec, cost, del_jac, mot_jac);
-                return std::make_pair(cost[0], arma::vec{del_jac});
-            };
-            auto del_f_only = [&](arma::vec x) {
-                arma::mat cost;
-                fs->CostOnly(x, fs->motion_vec, cost);
-                return cost[0];
-            };
-
-            for (int i = 0; i < 50; ++i) {
-                auto bt = backtrack(f, f_only, fs->motion_vec, motion_hyper);
+            for (int j = 0; j < 500; ++j) {
+                auto bt = backtrack(
+                    [&](arma::vec x) {
+                        arma::mat cost, del_jac, mot_jac;
+                        fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
+                        if (mot_jac.has_nan()) {
+                            std::cerr << "we have nans (mot)" << std::endl;
+                            std::cerr << cost[0] << std::endl;
+                            exit(1);
+                        }
+                        return std::make_pair(cost[0], arma::vec{mot_jac.t()});
+                    },
+                    [&](arma::vec x) {
+                        arma::mat cost;
+                        fs->CostOnly(gyro_delay, x, cost);
+                        return cost[0];
+                    },
+                    fs->motion_vec, motion_hyper);
                 fs->motion_vec += bt;
-                if (arma::norm(bt) < 1e-6) break;
+                if (arma::norm(bt) < 1e-6) {
+                    // std::cout << "break " << j << std::endl;
+                    break;
+                }
             }
-
-            arma::mat bt2 = backtrack(del_f, del_f_only, fs->gyro_delay, delay_hyper);
-
-            fs->gyro_delay += bt2;
-            std::cout << fs->gyro_delay[0] << " ";
-
-            if (rand() % 1000 < 5) fs->motion_vec = costs.back()->GuessMotion(fs->gyro_delay[0]);
         }
-        std::cout << std::endl;
+    };
+
+    auto f = [&](arma::vec x) {
+        arma::mat cost(1, 1), delay_g(1, 1);
+        for (auto& fs : costs) {
+            arma::mat cur_cost, cur_delay_g, tmp;
+            fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
+            cost += cur_cost;
+            delay_g += cur_delay_g;
+        }
+        if (delay_g.has_nan()) {
+            std::cerr << "we have nans (delay)" << std::endl;
+            exit(1);
+        }
+        return std::make_pair(cost[0], delay_g);
+    };
+
+    auto f_only = [&](arma::vec x) {
+        arma::mat cost(1, 1), delay_g(1, 1);
+        for (auto& fs : costs) {
+            arma::mat cur_cost;
+            fs->CostOnly(x, fs->motion_vec, cur_cost);
+            cost += cur_cost;
+        }
+        return cost[0];
+    };
+
+    auto do_opt_delay = [&]() {
+        arma::mat bt = backtrack(f, f_only, gyro_delay - delay_b * delay_v, delay_hyper);
+
+        delay_v = delay_b * delay_v + bt;
+        gyro_delay += delay_v;
+
+        return delay_opt_info{arma::norm(bt)};
+    };
+
+    int converge_counter = 0;
+
+    for (int i = 0; i < 1000; i++) {
+        // Optimize motion
+        do_opt_motion();
+
+        // Optimize delay
+        auto info = do_opt_delay();
+
+        if (info.step_size < 1e-6) {
+            converge_counter++;
+        } else {
+            converge_counter = 0;
+        }
+
+        if (converge_counter > 20) {
+            std::cout << "Converged at " << i << std::endl;
+            break;
+        }
+
+        std::cerr << gyro_delay[0] << " " << f_only(gyro_delay) << " " << info.step_size
+                  << std::endl;
     }
 
-    return {0, 0};
+    return {gyro_delay[0], f_only(gyro_delay)};
 }
 
 void plot_run(OptData& data) {
@@ -349,11 +391,19 @@ int main() {
     optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 430);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 1400, 1430);
-    double delay = -44.7;
-    for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1700);
+    // double delay = -44.7;
+    // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
+
+    for (int pos = 90; pos < 1600; pos += 60) {
+        std::cerr << pos << std::endl;
+        double delay = -42;
+        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 60).delay;
+        std::cout << pos << "," << delay << std::endl;
+    }
+
     // plot_run(opt_data);
 }

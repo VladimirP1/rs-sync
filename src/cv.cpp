@@ -28,6 +28,7 @@ void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_f
     if (!cap.read(cur)) throw std::runtime_error{"frame read failed"};
     cv::cvtColor(cur, cur, cv::COLOR_BGR2GRAY);
     for (int frame = start_frame; frame < end_frame; ++frame) {
+        std::cerr << "processing frame " << frame << std::endl;
         if (!cap.read(next)) throw std::runtime_error{"frame read failed"};
         cv::cvtColor(next, next, cv::COLOR_BGR2GRAY);
 
