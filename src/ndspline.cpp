@@ -17,7 +17,7 @@ ndspline ndspline::make(const arma::mat& m) {
     for (int row = 0; row < m.n_rows; ++row) {
         std::vector<double> Y(m.n_cols);
         std::copy(m.begin_row(row), m.end_row(row), Y.begin());
-        p(ret).push_back(tk::spline(X, Y, tk::spline::spline_type::cspline_hermite));
+        p(ret).push_back(tk::spline(X, Y));
     }
     return ret;
 }

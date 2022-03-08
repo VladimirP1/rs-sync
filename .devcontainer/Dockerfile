@@ -20,4 +20,8 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
      && apt-get -y install --no-install-recommends \
      python3-pip
 
+UN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+     && apt-get -y install --no-install-recommends \
+     gfortran autoconf libtool bison flex gperf libegl-dev libxrandr-dev libxi-dev libxcursor-dev libxdamage-dev libxinerama-dev nasm
+
 RUN pip3 install conan

@@ -130,8 +130,8 @@ struct FrameState {
 
         auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
         auto [v7, j7] = log1p_jac(v6);
-        auto [v8, j8] = sum_jac(v7);
-        auto [v9, j9] = sqr_jac(v8);
+        auto [v8, j8] = sqrt_jac(v7);
+        auto [v9, j9] = sum_jac(v8);
 
         cost = v9;
 
@@ -170,7 +170,7 @@ struct FrameState {
     static double calc(arma::mat P, arma::mat M, double k) {
         arma::mat r = (P * M) * (k / arma::norm(M));
         arma::mat rho = arma::log1p(r % r);
-        return arma::accu(rho) * arma::accu(rho);
+        return arma::accu(arma::sqrt(rho));
     }
 
     static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
@@ -299,7 +299,7 @@ void plot_run(OptData& data) {
     static constexpr backtrack_hyper motion_hyper = {
         .c = .01, .tau = .1, .limit = 20, .step_init = 1e-2};
 
-    for (double pos = -45; pos < -30; pos += .1) {
+    for (double pos = -60; pos < -30; pos += .1) {
         std::vector<std::unique_ptr<FrameState>> costs;
         for (auto& [frame, _] : data.flows) {
             costs.push_back(std::make_unique<FrameState>(frame, &data));
@@ -342,18 +342,18 @@ void plot_run(OptData& data) {
 }
 
 int main() {
-    std::cout << std::fixed << std::setprecision(16);
+    std::cout << std::fixed << std::setprecision(3);
 
     OptData opt_data;
-    // YXZ zYX
-    optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
+    // YXZ yZX
+    optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 400 + 30);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 400, 430);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1300, 1330);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1400, 1430);
-    // double delay = -44.7;
-    // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
-    plot_run(opt_data);
+    double delay = -44.7;
+    for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
+    // plot_run(opt_data);
 }

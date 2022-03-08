@@ -1,3 +1,5 @@
+// The plots of SVD-based cost vs optimization-based still do not match exactly ...
+
 #include <iomanip>
 #include <iostream>
 #include <vector>
@@ -86,22 +88,23 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
 static double calc(arma::mat P, arma::mat M, double k) {
     arma::mat r = (P * M) * (k / arma::norm(M));
     arma::mat rho = arma::log1p(r % r);
-    return arma::accu(rho);
+    return sqrt(arma::accu(arma::sqrt(rho)));
 }
 
 int main(int argc, char** argv) {
     std::cout << std::fixed << std::setprecision(16);
 
     OptData opt_data;
-    // YXZ zYX
-    optdata_fill_gyro(opt_data, "GX011338.MP4", "zYX");
+    // YXZ yZX
+    optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 150, 150 + 30);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
 
     const double k = 1e3;
     for (double delay = -60e-3; delay < -30e-3; delay += 1e-4) {
         double cost = 0;
+        double cost2 = 0;
         for (auto& [frame, _] : opt_data.flows) {
             arma::mat P, M;
             opt_compute_problem(frame, delay, opt_data, P);
@@ -109,7 +112,7 @@ int main(int argc, char** argv) {
 
             arma::mat residuals = (P * M);
             arma::mat weights = arma::sqrt(1 / (1 + (residuals % residuals) * k * k));
-            for (int i = 0; i < 50; ++i) {
+            for (int i = 0; i < 20; ++i) {
                 arma::vec S;
                 arma::mat U, V;
                 arma::svd(U, S, V, P.each_col() % weights, "std");
@@ -118,14 +121,25 @@ int main(int argc, char** argv) {
                 weights = arma::sqrt(1 / (1 + (residuals % residuals) * k * k));
             }
 
-            P = P.each_col() % weights;
-
             arma::vec S;
             arma::mat U, V;
-            arma::svd(U, S, V, P, "std");
+            arma::svd(U, S, V, P.each_col() % weights, "std");
+
+            arma::mat sol = V.col(V.n_cols - 1);
 
             cost += fabs(S[S.n_rows - 1]);
+            cost2 += fabs(calc(P, sol, k));
         }
-        std::cout << delay << "," << cost << std::endl;
+        std::cout << delay << "," << cost << "," << cost2 << std::endl;
     }
+
+    // arma::mat out;
+    // opt_compute_problem(90, -44.1e-3, opt_data, out);
+
+    // for (int row = 0;row < out.n_rows;++row) {
+    //     for (int col = 0; col < out.n_cols; ++col) {
+    //         std::cout << out(row,col) << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
 }
