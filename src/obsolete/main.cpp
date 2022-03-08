@@ -167,7 +167,7 @@ int main() {
     std::cout << std::fixed << std::setprecision(16);
 
     OptData opt_data;
-    // YXZ yZX
+    // YXZ zYX
     optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
