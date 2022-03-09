@@ -204,12 +204,9 @@ static arma::vec backtrack(std::function<std::tuple<double, arma::vec>(arma::vec
     double t = hyper.step_init;
     for (int i = 0; i < hyper.limit; ++i) {
         auto v1 = f_vonly(x0 - t * p);
-        // std::cout << v << " " << v1 << std::endl;
         if (v - v1 >= t * hyper.c * m) break;
         t *= hyper.tau;
-        // if (i == limit - 1) std::cout << "armijo fail" << std::endl;
     }
-    // std::cout << t << std::endl;
     return -t * p;
 }
 
@@ -252,11 +249,6 @@ opt_result opt_run(OptData& data, double initial_delay,
                     [&](arma::vec x) {
                         arma::mat cost, del_jac, mot_jac;
                         fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
-                        if (mot_jac.has_nan()) {
-                            std::cerr << "we have nans (mot)" << std::endl;
-                            std::cerr << cost[0] << std::endl;
-                            exit(1);
-                        }
                         return std::make_pair(cost[0], arma::vec{mot_jac.t()});
                     },
                     [&](arma::vec x) {
@@ -267,7 +259,6 @@ opt_result opt_run(OptData& data, double initial_delay,
                     fs->motion_vec, motion_hyper);
                 fs->motion_vec += bt;
                 if (arma::norm(bt) < 1e-6) {
-                    // std::cout << "break " << j << std::endl;
                     break;
                 }
             }
@@ -281,10 +272,6 @@ opt_result opt_run(OptData& data, double initial_delay,
             fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
             cost += cur_cost;
             delay_g += cur_delay_g;
-        }
-        if (delay_g.has_nan()) {
-            std::cerr << "we have nans (delay)" << std::endl;
-            exit(1);
         }
         return std::make_pair(cost[0], delay_g);
     };
