@@ -1,6 +1,9 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <random>
+#include <execution>
+#include <mutex>
 
 #include "ndspline.hpp"
 #include "quat.hpp"
@@ -15,6 +18,12 @@ arma::mat safe_normalize(arma::mat m) {
         return m;
     }
     return m / norm;
+}
+
+int mtrand(const int& min, const int& max) {
+    static thread_local std::mt19937 generator;
+    std::uniform_int_distribution<int> distribution(min, max);
+    return distribution(generator);
 }
 
 struct OptData {
@@ -70,9 +79,9 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
     double least_med = std::numeric_limits<double>::infinity();
     for (int i = 0; i < 200; ++i) {
         int vs[3];
-        vs[0] = vs[1] = rand() % problem.n_rows;
-        while (vs[1] == vs[0]) vs[2] = vs[1] = rand() % problem.n_rows;
-        while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = rand() % problem.n_rows;
+        vs[0] = vs[1] = mtrand(0, problem.n_rows - 1);
+        while (vs[1] == vs[0]) vs[2] = vs[1] = mtrand(0, problem.n_rows - 1);
+        while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = mtrand(0, problem.n_rows - 1);
 
         arma::mat v = arma::trans(safe_normalize(arma::cross(
             problem.row(vs[0]) - problem.row(vs[1]), problem.row(vs[0]) - problem.row(vs[2]))));
@@ -243,15 +252,15 @@ opt_result opt_run(OptData& data, double initial_delay,
     constexpr double delay_b{.3};
     arma::mat delay_v(1, 1);
     auto do_opt_motion = [&]() {
-        for (auto& fs : costs) {
+        std::for_each(std::execution::par, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
             for (int j = 0; j < 500; ++j) {
                 auto bt = backtrack(
-                    [&](arma::vec x) {
+                    [&fs, gyro_delay](arma::vec x) {
                         arma::mat cost, del_jac, mot_jac;
                         fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
                         return std::make_pair(cost[0], arma::vec{mot_jac.t()});
                     },
-                    [&](arma::vec x) {
+                    [&fs, gyro_delay](arma::vec x) {
                         arma::mat cost;
                         fs->CostOnly(gyro_delay, x, cost);
                         return cost[0];
@@ -262,27 +271,31 @@ opt_result opt_run(OptData& data, double initial_delay,
                     break;
                 }
             }
-        }
+        });
     };
 
     auto f = [&](arma::vec x) {
+        std::mutex m;
         arma::mat cost(1, 1), delay_g(1, 1);
-        for (auto& fs : costs) {
+        std::for_each(std::execution::par, costs.begin(), costs.end(), [x, &cost, &delay_g, &m](auto& fs) {
             arma::mat cur_cost, cur_delay_g, tmp;
             fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
+            std::unique_lock<std::mutex> lock(m);
             cost += cur_cost;
             delay_g += cur_delay_g;
-        }
+        });
         return std::make_pair(cost[0], delay_g);
     };
 
     auto f_only = [&](arma::vec x) {
-        arma::mat cost(1, 1), delay_g(1, 1);
-        for (auto& fs : costs) {
+        std::mutex m;
+        arma::mat cost(1, 1);
+        std::for_each(std::execution::par, costs.begin(), costs.end(), [x, &cost, &m](auto& fs) {
             arma::mat cur_cost;
             fs->CostOnly(x, fs->motion_vec, cur_cost);
+            std::unique_lock<std::mutex> lock(m);
             cost += cur_cost;
-        }
+        });
         return cost[0];
     };
 
@@ -379,7 +392,7 @@ int main() {
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1700);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
     // double delay = -44.7;
     // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
 
