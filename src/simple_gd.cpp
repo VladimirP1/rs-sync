@@ -1,14 +1,14 @@
+#include <execution>
 #include <iomanip>
 #include <iostream>
-#include <vector>
-#include <random>
-#include <execution>
 #include <mutex>
+#include <random>
+#include <vector>
 
+#include "cv.hpp"
 #include "ndspline.hpp"
 #include "quat.hpp"
 #include "signal.hpp"
-#include "cv.hpp"
 
 #include <telemetry-parser.h>
 
