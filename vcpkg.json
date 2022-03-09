@@ -9,12 +9,6 @@
         "contrib",
         "ffmpeg"
       ]
-    },
-    {
-      "name": "ceres",
-      "features": [
-        "lapack"
-      ]
     }
   ]
 }

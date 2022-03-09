@@ -113,14 +113,13 @@ struct FrameState {
 
         auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
         auto [v7, j7] = log1p_jac(v6);
-        auto [v8, j8] = sqrt_jac(v7 + kSqrtEps);
-        auto [v9, j9] = sum_jac(v8);
+        auto [v8, j8] = sum_jac(v7);
 
-        cost = v9;
+        cost = v8;
 
         jac_gyro_delay = (r2 - r1) / 2 / kStep;
 
-        jac_M = j9 * j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
+        jac_M = j8 * j7 * (j6a * j2 * j1 + j6b * j5 * j4 * j3);
 
         return true;
     }
@@ -146,7 +145,6 @@ struct FrameState {
    private:
     static constexpr double k = 1e3;
     static constexpr double kStep = 1e-6;
-    static constexpr double kSqrtEps = 1;
 
     int frame_;
     OptData* optdata_;
@@ -154,7 +152,7 @@ struct FrameState {
     static double calc(arma::mat P, arma::mat M, double k) {
         arma::mat r = (P * M) * (k / arma::norm(M));
         arma::mat rho = arma::log1p(r % r);
-        return arma::accu(arma::sqrt(rho + kSqrtEps));
+        return arma::accu(rho);
     }
 
     static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
@@ -401,7 +399,7 @@ int main() {
     for (int pos = 90; pos < 1600; pos += 60) {
         std::cerr << pos << std::endl;
         double delay = -42;
-        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 60).delay;
+        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 150).delay;
         std::cout << pos << "," << delay << std::endl;
     }
 
