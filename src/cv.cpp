@@ -93,51 +93,52 @@ Lens lens_load(const char* filename, const char* preset_name) {
     return ret;
 }
 
-arma::vec2 lens_undistort_point(Lens lens, arma::vec2 point) {
-    cv::Mat_<double> cam(3, 3), dist(4, 1);
-    cam << lens.fx, 0., lens.cx, 0, lens.fy, lens.cy, 0, 0, 1;
-    dist << lens.k1, lens.k2, lens.k3, lens.k4;
-
-    std::vector<cv::Point2d> pts_in, pts_out;
-    pts_in.push_back({point[0], point[1]});
-
-    cv::fisheye::undistortPoints(pts_in, pts_out, cam, dist, cv::Mat::eye(3, 3, CV_32F));
-
-    return arma::vec2({pts_out[0].x,pts_out[0].y});
-}
-
 // arma::vec2 lens_undistort_point(Lens lens, arma::vec2 point) {
-//     static constexpr double eps = 1e-9;
-//     static constexpr int kNumIterations = 9;
+//     cv::Mat_<double> cam(3, 3), dist(4, 1);
+//     cam << lens.fx, 0., lens.cx, 0, lens.fy, lens.cy, 0, 0, 1;
+//     dist << lens.k1, lens.k2, lens.k3, lens.k4;
 
-//     double x_ = (point[0] - lens.cx) / lens.fx;
-//     double y_ = (point[1] - lens.cy) / lens.fy;
-//     double theta_ = std::sqrt(x_ * x_ + y_ * y_);
+//     std::vector<cv::Point2d> pts_in, pts_out;
+//     pts_in.push_back({point[0], point[1]});
 
-//     double theta = M_PI / 4.;
-//     for (int i = 0; i < kNumIterations; ++i) {
-//         double theta2 = theta * theta, theta3 = theta2 * theta, theta4 = theta2 * theta2,
-//                theta5 = theta2 * theta3, theta6 = theta3 * theta3, theta7 = theta3 * theta4,
-//                theta8 = theta4 * theta4, theta9 = theta4 * theta5;
-//         double cur_theta_ =
-//             theta + lens.k1 * theta3 + lens.k2 * theta5 + lens.k3 * theta7 + lens.k4 * theta9;
-//         double cur_dTheta_ = 1 + 3 * lens.k1 * theta2 + 5 * lens.k2 * theta4 +
-//                              7 * lens.k3 * theta6 + 8 * lens.k4 * theta8;
-//         double error = cur_theta_ - theta_;
-//         double dthetaDtheta_ = 1. / cur_dTheta_;
-//         double new_theta = theta - error * dthetaDtheta_;
-//         while (new_theta >= M_PI / 2. || new_theta <= 0.) {
-//             new_theta = (new_theta + theta) / 2.;
-//         }
-//         theta = new_theta;
-//     }
+//     cv::fisheye::undistortPoints(pts_in, pts_out, cam, dist, cv::Mat::eye(3, 3, CV_32F));
 
-//     double r = std::tan(theta);
-//     double inv_cos_theta = 1. / std::cos(theta);
-//     double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
-
-//     return {x_ * s, y_ * s};
+//     return arma::vec2({pts_out[0].x,pts_out[0].y});
 // }
+
+arma::vec2 lens_undistort_point(Lens lens, arma::vec2 point) {
+    if (arma::norm(point) < 1e-8) return {0, 0};
+    static constexpr double eps = 1e-9;
+    static constexpr int kNumIterations = 9;
+
+    double x_ = (point[0] - lens.cx) / lens.fx;
+    double y_ = (point[1] - lens.cy) / lens.fy;
+    double theta_ = std::sqrt(x_ * x_ + y_ * y_);
+
+    double theta = M_PI / 4.;
+    for (int i = 0; i < kNumIterations; ++i) {
+        double theta2 = theta * theta, theta3 = theta2 * theta, theta4 = theta2 * theta2,
+               theta5 = theta2 * theta3, theta6 = theta3 * theta3, theta7 = theta3 * theta4,
+               theta8 = theta4 * theta4, theta9 = theta4 * theta5;
+        double cur_theta_ =
+            theta + lens.k1 * theta3 + lens.k2 * theta5 + lens.k3 * theta7 + lens.k4 * theta9;
+        double cur_dTheta_ = 1 + 3 * lens.k1 * theta2 + 5 * lens.k2 * theta4 +
+                             7 * lens.k3 * theta6 + 8 * lens.k4 * theta8;
+        double error = cur_theta_ - theta_;
+        double dthetaDtheta_ = 1. / cur_dTheta_;
+        double new_theta = theta - error * dthetaDtheta_;
+        while (new_theta >= M_PI / 2. || new_theta <= 0.) {
+            new_theta = (new_theta + theta) / 2.;
+        }
+        theta = new_theta;
+    }
+
+    double r = std::tan(theta);
+    double inv_cos_theta = 1. / std::cos(theta);
+    double s = (theta_ < eps) ? inv_cos_theta : r / theta_;
+
+    return {x_ * s, y_ * s};
+}
 
 arma::vec2 lens_distort_point(Lens lens, arma::vec2 point) {
     double r = arma::norm(point);

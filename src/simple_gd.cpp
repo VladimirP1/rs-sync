@@ -323,8 +323,8 @@ opt_result opt_run(OptData& data, double initial_delay,
             converge_counter = 0;
         }
 
-        if (converge_counter > 20) {
-            std::cout << "Converged at " << i << std::endl;
+        if (converge_counter > 5) {
+            // std::cout << "Converged at " << i << std::endl;
             break;
         }
 

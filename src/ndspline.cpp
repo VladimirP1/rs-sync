@@ -1,23 +1,19 @@
 #include "ndspline.hpp"
 #include "quat.hpp"
 
-#include <spline.hpp>
+#include "minispline.hpp"
 
-#define p(x) (*static_cast<std::vector<tk::spline>*>((x).__pimpl__.get()))
+#define p(x) (*static_cast<std::vector<spline>*>((x).__pimpl__.get()))
 
-ndspline::ndspline() { __pimpl__.reset(new std::vector<tk::spline>()); }
+ndspline::ndspline() { __pimpl__.reset(new std::vector<spline>()); }
 
 ndspline::~ndspline() {  }
 
 
 ndspline ndspline::make(const arma::mat& m) {
     ndspline ret;
-    std::vector<double> X(m.n_cols);
-    std::generate_n(X.begin(), m.n_cols, [i = 0]() mutable { return i++; });
     for (int row = 0; row < m.n_rows; ++row) {
-        std::vector<double> Y(m.n_cols);
-        std::copy(m.begin_row(row), m.end_row(row), Y.begin());
-        p(ret).push_back(tk::spline(X, Y));
+        p(ret).push_back(spline(m.row(row).t()));
     }
     return ret;
 }
@@ -33,7 +29,7 @@ arma::mat ndspline::eval(double t) const {
 arma::mat ndspline::deriv(double t) const {
     arma::mat ret(p(*this).size(), 1);
     for (int i = 0; i < ret.size(); ++i) {
-        ret[i] = p(*this)[i].deriv(1, t);
+        ret[i] = p(*this)[i].deriv(t);
     }
     return ret;
 }
