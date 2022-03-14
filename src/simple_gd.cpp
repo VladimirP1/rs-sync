@@ -110,15 +110,15 @@ struct FrameState {
         opt_compute_problem(frame_, gyro_delay[0] - kStep, *optdata_, PL);
         opt_compute_problem(frame_, gyro_delay[0] + kStep, *optdata_, PR);
 
-        double r1 = calc(PL, M, k);
-        double r2 = calc(PR, M, k);
+        double r1 = calc(PL, M, var_k);
+        double r2 = calc(PR, M, var_k);
 
         auto [v1, j1] = std::make_tuple(P * M, P);
         auto [v2, j2] = sqr_jac(v1);
 
         auto [v3, j3] = sqr_jac(M);
         auto [v4, j4] = sum_jac(v3);
-        auto [v5, j5, _] = div_jac(v4, k * k);
+        auto [v5, j5, _] = div_jac(v4, var_k * var_k);
 
         auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
         auto [v7, j7] = log1p_jac(v6);
@@ -136,7 +136,7 @@ struct FrameState {
     bool CostOnly(const arma::mat& gyro_delay, const arma::mat& M, arma::mat& cost) const {
         arma::mat P;
         opt_compute_problem(frame_, gyro_delay[0], *optdata_, P);
-        cost = {calc(P, M, k)};
+        cost = {calc(P, M, var_k)};
         return true;
     }
 
@@ -149,10 +149,10 @@ struct FrameState {
     arma::mat gyro_delay;
 
     arma::vec3 motion_vec;
+    double var_k = 1e3;
     arma::mat opt_tmp_data;
 
    private:
-    static constexpr double k = 1e3;
     static constexpr double kStep = 1e-6;
 
     int frame_;
@@ -241,6 +241,9 @@ opt_result opt_run(OptData& data, double initial_delay,
         if (frame < min_frame || frame > max_frame) continue;
         costs.push_back(std::make_unique<FrameState>(frame, &data));
         costs.back()->motion_vec = costs.back()->GuessMotion(gyro_delay[0]);
+        arma::mat problem;
+        opt_compute_problem(frame, gyro_delay[0], data, problem);
+        costs.back()->var_k = 1 / arma::norm(problem * costs.back()->motion_vec) * 1e2;
         costs.back()->opt_tmp_data.resize(3, 1);
         costs.back()->opt_tmp_data.zeros();
     }
@@ -392,6 +395,7 @@ int main() {
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 250);
     track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
     // double delay = -44.7;
     // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
@@ -399,7 +403,7 @@ int main() {
     for (int pos = 90; pos < 1600; pos += 60) {
         std::cerr << pos << std::endl;
         double delay = -42;
-        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 150).delay;
+        for (int i = 0; i < 6; ++i) delay = opt_run(opt_data, delay, pos, pos + 150).delay;
         std::cout << pos << "," << delay << std::endl;
     }
 

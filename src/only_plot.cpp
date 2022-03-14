@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
     track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
 
-    const double k = 1e3;
+    // const double k = 1e3;
     for (double delay = -60e-3; delay < -30e-3; delay += 1e-4) {
         double cost = 0;
         double cost2 = 0;
@@ -109,6 +109,8 @@ int main(int argc, char** argv) {
             arma::mat P, M;
             opt_compute_problem(frame, delay, opt_data, P);
             M = opt_guess_translational_motion(P);
+            double k = 1 / arma::norm(P * M) * 1e1;
+            std::cerr << k << std::endl;
 
             arma::mat residuals = (P * M);
             arma::mat weights = arma::sqrt(1 / (1 + (residuals % residuals) * k * k));
