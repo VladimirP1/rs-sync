@@ -40,20 +40,21 @@ struct MultiminFunction {
 
     static inline double _f(const gsl_vector *v, void *params) {
         auto _this = static_cast<MultiminFunction *>(params);
+        // std::cout << std::get<0>(_this->fdf_(arma::wrap(v))) << std::endl << arma::wrap(v).t() << std::endl;
         return _this->f_(arma::wrap(v));
     }
 
     static inline void _df(const gsl_vector *v, void *params, gsl_vector *df) {
         auto _this = static_cast<MultiminFunction *>(params);
-        arma::wrap(df).zeros();
-        // arma::wrap(df) = std::get<1>(_this->fdf_(arma::wrap(v)));
-        std::cout << std::get<0>(_this->fdf_(arma::wrap(v))) << std::endl << arma::wrap(v).t() << arma::wrap(df).t() << std::endl;
+        arma::wrap(df) = std::get<1>(_this->fdf_(arma::wrap(v)));
+        // std::cout << std::get<0>(_this->fdf_(arma::wrap(v))) << std::endl << arma::wrap(v).t() << arma::wrap(df).t() << std::endl;
     }
 
     static inline void _fdf(const gsl_vector *x, void *params, double *f, gsl_vector *df) {
         auto _this = static_cast<MultiminFunction *>(params);
         *f = _this->f_(arma::wrap(x));
         arma::wrap(df) = std::get<1>(_this->fdf_(arma::wrap(x)));
+        // std::cout << std::get<0>(_this->fdf_(arma::wrap(x))) << std::endl << arma::wrap(x).t() << arma::wrap(df).t() << std::endl;
     }
 };
 

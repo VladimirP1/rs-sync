@@ -212,7 +212,7 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
     constexpr double delay_b{.3};
     arma::mat delay_v(1, 1);
     auto do_opt_motion = [&]() {
-        std::for_each(std::execution::seq, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
+        std::for_each(std::execution::par, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
             Gsl::MultiminFunction func(3);
             func.SetF([&fs, gyro_delay](arma::vec x) {
                 arma::mat cost;
@@ -231,20 +231,16 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
 
             arma::wrap(motion_vec) = fs->motion_vec;
             gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-2,
-                                          1e-9);
+                                          1e-2);
 
             for (int j = 0; j < 500; ++j) {
                 auto r = gsl_multimin_fdfminimizer_iterate(minimizer);
-                if (r != GSL_CONTINUE) {
-                    std::cerr << j << " " << r
-                              << std::endl;
-                    std::cerr << "stop " << j << std::endl;
+                if (r != GSL_SUCCESS) {
                     break;
                 }
 
                 if (gsl_multimin_test_gradient(minimizer->gradient, 1e-6) ==
                     GSL_SUCCESS) {
-                    std::cerr << "converge " << j << std::endl;
                     break;
                 }
             }
@@ -290,7 +286,7 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
 
 void plot_run(OptData& data) {
     Backtrack motion_optimizer;
-    motion_optimizer.SetHyper(.01, .1, 1e-2, 20);
+    motion_optimizer.SetHyper(1e-4, .1, 1e-2, 20);
 
     for (double pos = -60; pos < -30; pos += .1) {
         std::vector<std::unique_ptr<FrameState>> costs;
@@ -335,7 +331,7 @@ void plot_run(OptData& data) {
 }
 
 int main() {
-    std::cout << std::fixed << std::setprecision(3);
+    std::cout << std::fixed << std::setprecision(14);
 
     OptData opt_data;
     // YXZ yZX
@@ -347,8 +343,8 @@ int main() {
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 250);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 250);
+    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
     // double delay = -44.7;
     // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
 

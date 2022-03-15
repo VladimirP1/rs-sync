@@ -225,25 +225,22 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
                 return std::make_pair(cost[0], arma::vec{mot_jac.t()});
             });
             gsl_vector* motion_vec = gsl_vector_alloc(3);
-            
+
             gsl_multimin_fdfminimizer* minimizer =
                 gsl_multimin_fdfminimizer_alloc(gsl_multimin_fdfminimizer_vector_bfgs2, 3);
 
             arma::wrap(motion_vec) = fs->motion_vec;
-            gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-2,
-                                          1e-9);
+            gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-2, 1e-9);
 
             for (int j = 0; j < 500; ++j) {
                 auto r = gsl_multimin_fdfminimizer_iterate(minimizer);
                 if (r != GSL_CONTINUE) {
-                    std::cerr << j << " " << r
-                              << std::endl;
+                    std::cerr << j << " " << r << std::endl;
                     std::cerr << "stop " << j << std::endl;
                     break;
                 }
 
-                if (gsl_multimin_test_gradient(minimizer->gradient, 1e-6) ==
-                    GSL_SUCCESS) {
+                if (gsl_multimin_test_gradient(minimizer->gradient, 1e-6) == GSL_SUCCESS) {
                     std::cerr << "converge " << j << std::endl;
                     break;
                 }
@@ -351,17 +348,46 @@ int main() {
     fs.var_k = 1e3;
     fs.gyro_delay = {-42};
 
-    arma::mat cost, jac_delay, jac_motion;
+    // arma::mat cost, jac_delay, jac_motion;
 
-    int n = 10000;
-    fs.motion_vec[0] -= 1e-3 * n / 2;
-    for (int i = 0; i < 10000; i++) {
-        fs.Cost(fs.gyro_delay, fs.motion_vec, cost, jac_delay, jac_motion);
+    // int n = 10000;
+    // fs.motion_vec[0] -= 1e-3 * n / 2;
+    // for (int i = 0; i < 10000; i++) {
+    //     fs.Cost(fs.gyro_delay, fs.motion_vec, cost, jac_delay, jac_motion);
 
-        std::cout << fs.motion_vec[0] << "," << cost[0] << std::endl;
-        // std::cout << fs.motion_vec[0] << "," << jac_motion[0] << std::endl;
+    //     std::cout << fs.motion_vec[0] << "," << cost[0] << std::endl;
+    //     // std::cout << fs.motion_vec[0] << "," << jac_motion[0] << std::endl;
 
-        fs.motion_vec[0] += 1e-3;
+    //     fs.motion_vec[0] += 1e-3;
+    // }
+
+    Gsl::MultiminFunction func(3);
+    func.SetF([&fs](arma::vec x) {
+        arma::mat cost;
+        fs.CostOnly(fs.gyro_delay, x, cost);
+        return cost[0];
+    });
+    func.SetFdF([&fs](arma::vec x) {
+        arma::mat cost, del_jac, mot_jac;
+        fs.Cost(fs.gyro_delay, x, cost, del_jac, mot_jac);
+        return std::make_pair(cost[0], arma::vec{mot_jac.t()});
+    });
+    gsl_vector* motion_vec = gsl_vector_alloc(3);
+
+    gsl_multimin_fdfminimizer* minimizer =
+        gsl_multimin_fdfminimizer_alloc(gsl_multimin_fdfminimizer_vector_bfgs2, 3);
+
+    arma::wrap(motion_vec) = fs.motion_vec;
+    gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-2, 1e-4);
+
+    for (int j = 0; j < 50; ++j) {
+        auto r = gsl_multimin_fdfminimizer_iterate(minimizer);
+        std::cout << arma::wrap(minimizer->gradient) << std::endl;
+        // if (r != GSL_CONTINUE) {
+        //     std::cerr << j << " " << r << std::endl;
+        //     std::cerr << "stop " << j << std::endl;
+        //     break;
+        // }
     }
-
 }
+ 
