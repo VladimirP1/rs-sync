@@ -9,22 +9,11 @@
 #include "ndspline.hpp"
 #include "quat.hpp"
 #include "signal.hpp"
+#include "backtrack.hpp"
+#include "simple_calculus.hpp"
+#include "inline_utils.hpp"
 
 #include <telemetry-parser.h>
-
-arma::mat safe_normalize(arma::mat m) {
-    double norm = arma::norm(m);
-    if (norm < 1e-12) {
-        return m;
-    }
-    return m / norm;
-}
-
-int mtrand(const int& min, const int& max) {
-    static thread_local std::mt19937 generator;
-    std::uniform_int_distribution<int> distribution(min, max);
-    return distribution(generator);
-}
 
 struct OptData {
     double quats_start{};
@@ -140,10 +129,16 @@ struct FrameState {
         return true;
     }
 
-    arma::vec3 GuessMotion(double gyro_delay) {
+    arma::vec3 GuessMotion(double gyro_delay) const {
         arma::mat problem;
         opt_compute_problem(frame_, gyro_delay, *optdata_, problem);
         return opt_guess_translational_motion(problem);
+    }
+
+    double GuessK(double gyro_delay) const {
+        arma::mat problem;
+        opt_compute_problem(frame_, gyro_delay, *optdata_, problem);
+        return 1 / arma::norm(problem * motion_vec) * 1e2;
     }
 
     arma::mat gyro_delay;
@@ -163,134 +158,43 @@ struct FrameState {
         arma::mat rho = arma::log1p(r % r);
         return arma::accu(rho);
     }
-
-    static std::tuple<arma::mat, arma::mat> sqr_jac(arma::mat x) {
-        return {x % x, arma::diagmat(2. * x)};
-    }
-
-    static std::tuple<arma::mat, arma::mat> sqrt_jac(arma::mat x) {
-        x = arma::sqrt(x);
-        return {x, arma::diagmat(1. / (2. * x))};
-    }
-
-    static std::tuple<arma::mat, arma::mat> log1p_jac(arma::mat x) {
-        return {arma::log1p(x), arma::diagmat(1. / (1. + x))};
-    }
-
-    static std::tuple<arma::mat, arma::mat> sum_jac(arma::mat x) {
-        arma::mat d(1, x.n_rows);
-        d.ones();
-        return {arma::sum(x), d};
-    }
-
-    static std::tuple<arma::mat, arma::mat, arma::mat> div_jac(arma::mat x, double y) {
-        arma::mat dx(x.n_rows, x.n_rows);
-        dx.eye();
-        return {x / y, dx / y, -x / (y * y)};
-    }
-
-    static std::tuple<arma::mat, arma::mat> mul_const_jac(arma::mat x, double y) {
-        arma::mat dx(x.n_rows, x.n_rows);
-        dx.eye();
-        return {x * y, dx * y};
-    }
 };
 
-struct backtrack_hyper {
-    double c{.7};
-    double tau{.1};
-    double limit{20};
-    double step_init{1};
-};
-
-static arma::vec backtrack(std::function<std::tuple<double, arma::vec>(arma::vec)> f,
-                           std::function<double(arma::vec)> f_vonly, arma::vec x0,
-                           backtrack_hyper hyper = {}) {
-    if (!f_vonly) f_vonly = [&](arma::vec x) { return std::get<0>(f(x)); };
-
-    auto [v, p] = f(x0);
-    double m = arma::dot(p, p);
-    double t = hyper.step_init;
-    for (int i = 0; i < hyper.limit; ++i) {
-        auto v1 = f_vonly(x0 - t * p);
-        if (v - v1 >= t * hyper.c * m) break;
-        t *= hyper.tau;
-    }
-    return -t * p;
-}
-
-struct opt_result {
-    double delay;
-    double cost;
-};
-
-opt_result opt_run(OptData& data, double initial_delay,
-                   int min_frame = std::numeric_limits<int>::min(),
-                   int max_frame = std::numeric_limits<int>::max()) {
+double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric_limits<int>::min(),
+               int max_frame = std::numeric_limits<int>::max()) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = initial_delay;
-
-    static constexpr backtrack_hyper motion_hyper = {
-        .c = .7, .tau = .1, .limit = 20, .step_init = 1e-2};
-
-    static constexpr backtrack_hyper delay_hyper = {
-        .c = .2, .tau = .1, .limit = 10, .step_init = 1};
 
     std::vector<std::unique_ptr<FrameState>> costs;
     for (auto& [frame, _] : data.flows) {
         if (frame < min_frame || frame > max_frame) continue;
         costs.push_back(std::make_unique<FrameState>(frame, &data));
         costs.back()->motion_vec = costs.back()->GuessMotion(gyro_delay[0]);
-        arma::mat problem;
-        opt_compute_problem(frame, gyro_delay[0], data, problem);
-        costs.back()->var_k = 1 / arma::norm(problem * costs.back()->motion_vec) * 1e2;
+        costs.back()->var_k = costs.back()->GuessK(gyro_delay[0]);
         costs.back()->opt_tmp_data.resize(3, 1);
         costs.back()->opt_tmp_data.zeros();
     }
 
-    struct delay_opt_info {
-        double step_size;
-    };
+    Backtrack motion_optimizer, delay_optimizer;
+    motion_optimizer.SetHyper(.7, .1, 1e-2, 20);
+    
+    delay_optimizer.SetHyper(.2, .1, 1, 10);
 
-    constexpr double delay_b{.3};
-    arma::mat delay_v(1, 1);
-    auto do_opt_motion = [&]() {
-        std::for_each(std::execution::par, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
-            for (int j = 0; j < 500; ++j) {
-                auto bt = backtrack(
-                    [&fs, gyro_delay](arma::vec x) {
-                        arma::mat cost, del_jac, mot_jac;
-                        fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
-                        return std::make_pair(cost[0], arma::vec{mot_jac.t()});
-                    },
-                    [&fs, gyro_delay](arma::vec x) {
-                        arma::mat cost;
-                        fs->CostOnly(gyro_delay, x, cost);
-                        return cost[0];
-                    },
-                    fs->motion_vec, motion_hyper);
-                fs->motion_vec += bt;
-                if (arma::norm(bt) < 1e-6) {
-                    break;
-                }
-            }
-        });
-    };
-
-    auto f = [&](arma::vec x) {
+    delay_optimizer.SetObjective([&](arma::vec x) {
         std::mutex m;
         arma::mat cost(1, 1), delay_g(1, 1);
-        std::for_each(std::execution::par, costs.begin(), costs.end(), [x, &cost, &delay_g, &m](auto& fs) {
-            arma::mat cur_cost, cur_delay_g, tmp;
-            fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
-            std::unique_lock<std::mutex> lock(m);
-            cost += cur_cost;
-            delay_g += cur_delay_g;
-        });
+        std::for_each(std::execution::par, costs.begin(), costs.end(),
+                      [x, &cost, &delay_g, &m](auto& fs) {
+                          arma::mat cur_cost, cur_delay_g, tmp;
+                          fs->Cost(x, fs->motion_vec, cur_cost, cur_delay_g, tmp);
+                          std::unique_lock<std::mutex> lock(m);
+                          cost += cur_cost;
+                          delay_g += cur_delay_g;
+                      });
         return std::make_pair(cost[0], delay_g);
-    };
+    });
 
-    auto f_only = [&](arma::vec x) {
+    delay_optimizer.SetObjective([&](arma::vec x) {
         std::mutex m;
         arma::mat cost(1, 1);
         std::for_each(std::execution::par, costs.begin(), costs.end(), [x, &cost, &m](auto& fs) {
@@ -300,15 +204,45 @@ opt_result opt_run(OptData& data, double initial_delay,
             cost += cur_cost;
         });
         return cost[0];
+    });
+
+    struct delay_opt_info {
+        double step_size;
+    };
+
+    constexpr double delay_b{.3};
+    arma::mat delay_v(1, 1);
+    auto do_opt_motion = [&]() {
+        std::for_each(std::execution::par, costs.begin(), costs.end(),
+                      [gyro_delay, &motion_optimizer](auto& fs) {
+                          Backtrack local_motion_optimizer = motion_optimizer;
+                          local_motion_optimizer.SetObjective([&fs, gyro_delay](arma::vec x) {
+                              arma::mat cost;
+                              fs->CostOnly(gyro_delay, x, cost);
+                              return cost[0];
+                          });
+                          local_motion_optimizer.SetObjective([&fs, gyro_delay](arma::vec x) {
+                              arma::mat cost, del_jac, mot_jac;
+                              fs->Cost(gyro_delay, x, cost, del_jac, mot_jac);
+                              return std::make_pair(cost[0], arma::vec{mot_jac.t()});
+                          });
+                          for (int j = 0; j < 500; ++j) {
+                              arma::vec step = local_motion_optimizer.Step(fs->motion_vec);
+                              fs->motion_vec += step;
+                              if (arma::norm(step) < 1e-6) {
+                                  break;
+                              }
+                          }
+                      });
     };
 
     auto do_opt_delay = [&]() {
-        arma::mat bt = backtrack(f, f_only, gyro_delay - delay_b * delay_v, delay_hyper);
+        arma::mat step = delay_optimizer.Step(gyro_delay - delay_b * delay_v);
 
-        delay_v = delay_b * delay_v + bt;
+        delay_v = delay_b * delay_v + step;
         gyro_delay += delay_v;
 
-        return delay_opt_info{arma::norm(bt)};
+        return delay_opt_info{arma::norm(step)};
     };
 
     int converge_counter = 0;
@@ -327,20 +261,18 @@ opt_result opt_run(OptData& data, double initial_delay,
         }
 
         if (converge_counter > 5) {
-            // std::cout << "Converged at " << i << std::endl;
             break;
         }
 
-        std::cerr << gyro_delay[0] << " " << f_only(gyro_delay) << " " << info.step_size
-                  << std::endl;
+        std::cerr << gyro_delay[0] << " " << info.step_size << std::endl;
     }
 
-    return {gyro_delay[0], f_only(gyro_delay)};
+    return gyro_delay[0];
 }
 
 void plot_run(OptData& data) {
-    static constexpr backtrack_hyper motion_hyper = {
-        .c = .01, .tau = .1, .limit = 20, .step_init = 1e-2};
+    Backtrack motion_optimizer;
+    motion_optimizer.SetHyper(.01, .1, 1e-2, 20);
 
     for (double pos = -60; pos < -30; pos += .1) {
         std::vector<std::unique_ptr<FrameState>> costs;
@@ -353,19 +285,19 @@ void plot_run(OptData& data) {
         }
 
         for (auto& fs : costs) {
-            auto f = [&](arma::vec x) {
+            motion_optimizer.SetObjective([&](arma::vec x) {
                 arma::mat cost, del_jac, mot_jac;
                 fs->Cost(fs->gyro_delay, x, cost, del_jac, mot_jac);
                 return std::make_pair(cost[0], arma::vec{mot_jac.t()});
-            };
-            auto f_only = [&](arma::vec x) {
+            });
+            motion_optimizer.SetObjective([&](arma::vec x) {
                 arma::mat cost;
                 fs->CostOnly(fs->gyro_delay, x, cost);
                 return cost[0];
-            };
+            });
 
             for (int i = 0; i < 500; ++i) {
-                auto bt = backtrack(f, f_only, fs->motion_vec, motion_hyper);
+                auto bt = motion_optimizer.Step(fs->motion_vec);
                 fs->motion_vec += bt;
                 if (arma::norm(bt) < 1e-6) break;
             }
@@ -390,8 +322,10 @@ int main() {
     OptData opt_data;
     // YXZ yZX
     optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
+    // optdata_fill_gyro(opt_data, "GH011230.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
+    // track_frames(opt_data.flows, lens, "GH011230.MP4", 90, 1000);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
@@ -403,7 +337,7 @@ int main() {
     for (int pos = 90; pos < 1600; pos += 60) {
         std::cerr << pos << std::endl;
         double delay = -42;
-        for (int i = 0; i < 6; ++i) delay = opt_run(opt_data, delay, pos, pos + 150).delay;
+        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 150);
         std::cout << pos << "," << delay << std::endl;
     }
 

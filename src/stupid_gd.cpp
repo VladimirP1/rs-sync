@@ -382,18 +382,19 @@ int main() {
 
     OptData opt_data;
     // YXZ yZX
-    optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
+    // optdata_fill_gyro(opt_data, "GX011338.MP4", "yZX");
 
     Lens lens = lens_load("lens.txt", "hero6_27k_43");
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90 + 30);
-    // track_frames(opt_data.flows, lens, "GX011338.MP4", 600, 630);
+    optdata_fill_gyro(opt_data, "GH011230.MP4", "yZX");
+    track_frames(opt_data.flows, lens, "GH011230.MP4", 90, 1000);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 1700, 1710);
-    track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
+    // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 1750);
     // track_frames(opt_data.flows, lens, "GX011338.MP4", 90, 90+150);
     // double delay = -44.7;
     // for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay).delay;
 
-    for (int pos = 90; pos < 1600; pos += 60) {
+    for (int pos = 90; pos < 840; pos += 60) {
         std::cerr << pos << std::endl;
         double delay = -42;
         for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + 150).delay;
