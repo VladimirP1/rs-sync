@@ -24,6 +24,16 @@ struct OptData {
     FramesFlow flows{};
 };
 
+struct params {
+    arma::vec delay() { return arma::vec(params.memptr(), 1, false, true); }
+    arma::vec motion() { return arma::vec(params.memptr() + 1, 1, false, true); }
+    arma::vec align() { return arma::vec(params.memptr() + 4, 1, false, true); }
+    const arma::vec delay() const { return arma::vec(params.memptr(), 1, false, true); }
+    const arma::vec motion() const { return arma::vec(params.memptr() + 1, 1, false, true); }
+    const arma::vec align() const { return arma::vec(params.memptr() + 4, 1, false, true); }
+    mutable arma::vec params{7};
+};
+
 void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orient) {
     tp_gyrodata data = tp_load_gyro(filename, orient);
     arma::mat timestamps(data.timestamps, 1, data.samples);
@@ -41,21 +51,31 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
     optdata.quats = ndspline::make(quats);
 }
 
-void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem) {
+arma::mat opt_compute_rotations(int frame, const params& p, const OptData& data) {
     const auto& flow = data.flows.at(frame);
-    gyro_delay /= 1000;
-
-    arma::mat ap = flow.rows(0, 2);
-    arma::mat bp = flow.rows(3, 5);
+    double gyro_delay = p.delay()[0] / 1000;
     arma::mat at = (flow.row(6) - data.quats_start + gyro_delay) * data.sample_rate;
     arma::mat bt = (flow.row(7) - data.quats_start + gyro_delay) * data.sample_rate;
-
-    problem.resize(at.n_cols, 3);
-    for (int i = 0; i < at.n_cols; ++i) {
+    arma::mat rotations(flow.n_cols, 4);
+    for (int i = 0; i < flow.n_cols; ++i) {
         arma::vec4 a_conj = quat_conj(data.quats.eval(at[i]));
         arma::vec4 b = data.quats.eval(bt[i]);
         double inv_ab_norm = (1. / arma::norm(a_conj)) * (1. / arma::norm(b));
         arma::vec4 rot = quat_prod(a_conj, b) * inv_ab_norm;
+        rotations.row(i) = rot;
+    }
+    return rotations;
+}
+
+arma::mat opt_compute_problem(int frame, params p, const OptData& data,
+                              const arma::mat& rotations) {
+    const auto& flow = data.flows.at(frame);
+    arma::mat ap = flow.rows(0, 2);
+    arma::mat bp = flow.rows(3, 5);
+    arma::mat problem(flow.n_cols, 3);
+    p.align() = safe_normalize(p.align());
+    for (int i = 0; i < flow.n_cols; ++i) {
+        arma::vec4 rot = quat_prod(quat_conj(p.align()), quat_prod(rotations.row(i), p.align()));
         arma::vec3 br = quat_rotate_point(quat_conj(rot), bp.col(i));
         problem.row(i) = arma::trans(arma::cross(ap.col(i), br));
     }
@@ -220,4 +240,3 @@ int main() {
         // }
     }
 }
- 

@@ -4,7 +4,7 @@
 
 inline arma::mat safe_normalize(arma::mat m) {
     double norm = arma::norm(m);
-    if (norm < 1e-12) {
+    if (norm < 1e-8) {
         return m;
     }
     return m / norm;
