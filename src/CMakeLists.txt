@@ -20,5 +20,8 @@ target_link_libraries(only_plot PRIVATE support)
 add_executable(test_cost test/test_cost.cpp)
 target_link_libraries(test_cost PRIVATE support)
 
+add_executable(sync_suggest sync_suggest.cpp)
+target_link_libraries(sync_suggest PRIVATE support)
+
 # add_executable(test_cost_align test/test_cost_align.cpp)
 # target_link_libraries(test_cost_align PRIVATE support)
