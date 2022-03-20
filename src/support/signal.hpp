@@ -2,7 +2,7 @@
 
 #include <armadillo>
 
-inline void gyro_lowpass(arma::vec3* samples, int length, int divider);
-inline void gyro_upsample(arma::vec3* samples, int length_new, int multiplier);
-inline void gyro_decimate(arma::vec3* samples, int length, int divider);
+void gyro_lowpass(arma::mat& samples, int divider);
+void gyro_upsample(arma::mat& samples, int multiplier);
+void gyro_decimate(arma::mat& samples, int divider);
 int gyro_interpolate(arma::mat& timestamps, arma::mat& gyro);
