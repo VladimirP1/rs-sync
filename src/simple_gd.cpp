@@ -67,13 +67,12 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
     arma::vec3 best_sol;
     double least_med = std::numeric_limits<double>::infinity();
     for (int i = 0; i < 200; ++i) {
-        int vs[3];
+        int vs[2];
         vs[0] = vs[1] = mtrand(0, problem.n_rows - 1);
-        while (vs[1] == vs[0]) vs[2] = vs[1] = mtrand(0, problem.n_rows - 1);
-        while (vs[2] == vs[1] || vs[2] == vs[0]) vs[2] = mtrand(0, problem.n_rows - 1);
+        while (vs[1] == vs[0]) vs[1] = mtrand(0, problem.n_rows - 1);
 
-        arma::mat v = arma::trans(safe_normalize(arma::cross(
-            problem.row(vs[0]) - problem.row(vs[1]), problem.row(vs[0]) - problem.row(vs[2]))));
+        arma::mat v =
+            arma::trans(safe_normalize(arma::cross(problem.row(vs[0]), problem.row(vs[1]))));
 
         arma::mat residuals = nproblem * v;
         arma::mat residuals2 = residuals % residuals;
@@ -177,7 +176,7 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
 
     Backtrack motion_optimizer, delay_optimizer;
     motion_optimizer.SetHyper(.7, .1, 1e-2, 20);
-    
+
     delay_optimizer.SetHyper(.2, .1, 1, 10);
 
     delay_optimizer.SetObjective([&](arma::vec x) {
