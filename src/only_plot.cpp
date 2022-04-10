@@ -105,12 +105,15 @@ int main(int argc, char** argv) {
     for (double delay = -60e-3; delay < -30e-3; delay += 1e-4) {
         double cost = 0;
         double cost2 = 0;
+        double cost3 = 0;
         for (auto& [frame, _] : opt_data.flows) {
             arma::mat P, M;
             opt_compute_problem(frame, delay, opt_data, P);
             M = opt_guess_translational_motion(P);
-            double k = 1 / arma::norm(P * M) * 1e1;
-            std::cerr << k << std::endl;
+            double k = 1 / arma::norm(P * M) * 1e2;
+            // std::cerr << k << std::endl;
+
+            cost3 += calc(P, M, k);
 
             arma::mat residuals = (P * M);
             arma::mat weights = arma::sqrt(1 / (1 + (residuals % residuals) * k * k));
@@ -132,7 +135,7 @@ int main(int argc, char** argv) {
             cost += fabs(S[S.n_rows - 1]);
             cost2 += fabs(calc(P, sol, k));
         }
-        std::cout << delay << "," << cost << "," << cost2 << std::endl;
+        std::cout << 1000 * delay << "," << cost3 << "," << cost << "," << cost2 << std::endl;
     }
 
     // arma::mat out;
