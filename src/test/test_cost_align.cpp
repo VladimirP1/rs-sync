@@ -52,7 +52,7 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
 }
 
 arma::mat opt_compute_rotations(int frame, const params& p, const OptData& data) {
-    const auto& flow = data.flows.at(frame);
+    const auto& flow = data.flows.data.at(frame);
     double gyro_delay = p.delay()[0] / 1000;
     arma::mat at = (flow.row(6) - data.quats_start + gyro_delay) * data.sample_rate;
     arma::mat bt = (flow.row(7) - data.quats_start + gyro_delay) * data.sample_rate;
@@ -69,7 +69,7 @@ arma::mat opt_compute_rotations(int frame, const params& p, const OptData& data)
 
 arma::mat opt_compute_problem(int frame, params p, const OptData& data,
                               const arma::mat& rotations) {
-    const auto& flow = data.flows.at(frame);
+    const auto& flow = data.flows.data.at(frame);
     arma::mat ap = flow.rows(0, 2);
     arma::mat bp = flow.rows(3, 5);
     arma::mat problem(flow.n_cols, 3);

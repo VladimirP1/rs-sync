@@ -20,7 +20,7 @@ void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_f
     if (cap.get(cv::CAP_PROP_POS_FRAMES) != start_frame) {
         throw std::runtime_error{"Seek failed"};
     }
-    double fps = cap.get(cv::CAP_PROP_FPS);
+    flow.fps = cap.get(cv::CAP_PROP_FPS);
 
     cv::Ptr<cv::DISOpticalFlow> dis = cv::DISOpticalFlow::create();
 
@@ -45,14 +45,14 @@ void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_f
         }
 
         // Undistort the points
-        arma::mat& m = flow[frame];
+        arma::mat& m = flow.data[frame];
         m.resize(8, points_a.size());
         for (int i = 0; i < points_a.size(); ++i) {
             arma::vec2 a = lens_undistort_point(lens, points_a[i]);
             arma::vec2 b = lens_undistort_point(lens, points_b[i]);
 
-            double ts_a = (frame + 0.) / fps + lens.ro * (points_a[i][1] / cur.rows);
-            double ts_b = (frame + 1.) / fps + lens.ro * (points_b[i][1] / cur.rows);
+            double ts_a = (frame + 0.) / flow.fps + lens.ro * (points_a[i][1] / cur.rows);
+            double ts_b = (frame + 1.) / flow.fps + lens.ro * (points_b[i][1] / cur.rows);
 
             m.submat(0, i, 1, i) = a;
             m.submat(3, i, 4, i) = b;
@@ -62,8 +62,6 @@ void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_f
             m.submat(3, i, 5, i) = arma::normalise(m.submat(3, i, 5, i));
             m(6, i) = ts_a;
             m(7, i) = ts_b;
-
-            // std::cout << m.col(i).t() << std::endl;
         }
 
         cur = std::move(next);

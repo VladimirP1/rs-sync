@@ -10,7 +10,11 @@ struct Lens {
     double k1{}, k2{}, k3{}, k4{};
 };
 
-using FramesFlow = std::unordered_map<int, arma::mat>;
+
+struct FramesFlow {
+    double fps{};
+    std::unordered_map<int, arma::mat> data{};
+};
 
 Lens lens_load(const char* filename, const char* preset_name);
 void track_frames(FramesFlow& flow, Lens lens, const char* filename, int start_frame, int end_frame);
