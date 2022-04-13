@@ -47,8 +47,36 @@ arma::vec3 opt_guess_translational_motion2(const arma::mat& problem) {
     return best_sol;
 }
 
+static constexpr const char* variants[] = {
+    "YxZ", "Xyz", "XZy", "Zxy", "zyX", "yxZ", "ZXY", "zYx", "ZYX", "yXz", "YZX", "XyZ",
+    "Yzx", "zXy", "YXz", "xyz", "yZx", "XYZ", "zxy", "xYz", "XYz", "zxY", "zXY", "xZy",
+    "zyx", "xyZ", "Yxz", "xzy", "yZX", "yzX", "ZYx", "xYZ", "zYX", "ZxY", "yzx", "xZY",
+    "Xzy", "XzY", "YzX", "Zyx", "XZY", "yxz", "xzY", "ZyX", "YXZ", "yXZ", "YZx", "ZXy"};
+
+void find_orient() {
+    OptData opt_data;
+    Lens lens = lens_load("lens.txt", "xlite4k43");
+    track_frames(opt_data.flows, lens, "171836AA.MP4", 30, 30 + 60);
+
+    for (int i = 0; i < sizeof(variants); ++i) {
+        optdata_fill_gyro(opt_data, "171836AA.CSV", variants[i]);
+        double cost = 0;
+        for (auto& [frame, _] : opt_data.flows.data) {
+            arma::mat P, M;
+            opt_compute_problem(frame, -34, opt_data, P);
+            M = opt_guess_translational_motion2(P);
+            double k = 1 / arma::norm(P * M) * 1e2;
+            cost += calc(P, M, k);
+        }
+        std::cout << variants[i] << " " << cost << std::endl;
+    }
+}
+
 int main(int argc, char** argv) {
     std::cout << std::fixed << std::setprecision(16);
+
+    // find_orient();
+    // return 0;
 
     OptData opt_data;
     // YXZ yZX
