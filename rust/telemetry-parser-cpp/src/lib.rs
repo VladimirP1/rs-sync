@@ -37,20 +37,23 @@ pub extern "C" fn tp_load_gyro(path_c: *const c_char, orient_c: *const c_char) -
     let imu_data = util::normalized_imu(&input, orient).unwrap();
 
     unsafe {
+        let count : usize = imu_data.iter().filter(|v| v.gyro.is_some()).count();
         let gyro_out = GyroData {
-            samples: imu_data.len(),
-            timestamps: libc::malloc(mem::size_of::<f64>() as libc::size_t * imu_data.len())
+            samples: count,
+            timestamps: libc::malloc(mem::size_of::<f64>() as libc::size_t * count)
                 as *mut f64,
-            gyro: libc::malloc(mem::size_of::<f64>() as libc::size_t * imu_data.len() * 3)
+            gyro: libc::malloc(mem::size_of::<f64>() as libc::size_t * count * 3)
                 as *mut f64,
         };
 
+        let mut i : usize = 0;
         let gyro_scale =  std::f64::consts::PI / 180.;
-        for i in 0..imu_data.len() {
-            *gyro_out.timestamps.offset(i as isize) = imu_data[i].timestamp_ms / 1000.;
-            *gyro_out.gyro.offset((3 * i + 0) as isize) = imu_data[i].gyro.unwrap()[0] * gyro_scale;
-            *gyro_out.gyro.offset((3 * i + 1) as isize) = imu_data[i].gyro.unwrap()[1] * gyro_scale;
-            *gyro_out.gyro.offset((3 * i + 2) as isize) = imu_data[i].gyro.unwrap()[2] * gyro_scale;
+        for imd in imu_data.iter().filter(|v| v.gyro.is_some()) {
+            *gyro_out.timestamps.offset(i as isize) = imd.timestamp_ms / 1000.;
+            *gyro_out.gyro.offset((3 * i + 0) as isize) = imd.gyro.unwrap()[0] * gyro_scale;
+            *gyro_out.gyro.offset((3 * i + 1) as isize) = imd.gyro.unwrap()[1] * gyro_scale;
+            *gyro_out.gyro.offset((3 * i + 2) as isize) = imd.gyro.unwrap()[2] * gyro_scale;
+            i += 1;
         }
 
         return gyro_out;
