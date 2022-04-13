@@ -11,6 +11,7 @@
       ]
     },
     "tbb",
-    "gsl"
+    "gsl",
+    "nlohmann-json"
   ]
 }

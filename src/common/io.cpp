@@ -11,7 +11,7 @@ void optdata_fill_gyro(OptData& optdata, const char* filename, const char* orien
     tp_free(data);
     optdata.sample_rate = gyro_interpolate(timestamps, gyro);
 
-    arma::mat quats(4, data.samples);
+    arma::mat quats(4, gyro.n_cols);
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
         quats.col(i) = arma::normalise(
