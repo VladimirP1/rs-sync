@@ -13,8 +13,8 @@ target_link_libraries(rssync_json PRIVATE support common nlohmann_json::nlohmann
 add_executable(gd_gsl gd_and_gsl.cpp)
 target_link_libraries(gd_gsl PRIVATE support common)
 
-add_executable(gd0 stupid_gd.cpp)
-target_link_libraries(gd0 PRIVATE support common)
+add_executable(stupid_rssync_json stupid_rssync_json.cpp)
+target_link_libraries(stupid_rssync_json PRIVATE support common)
 
 add_executable(only_plot only_plot.cpp)
 target_link_libraries(only_plot PRIVATE support common)
