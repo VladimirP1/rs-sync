@@ -12,11 +12,13 @@ plt.rcParams.update({
     ])
 })
 
+plt.rc('axes', labelsize=14)
+
 fps = 60
 ax2_yrange = 10
 
 data2 = pd.read_csv(sys.argv[1], header=None)
-fig, ax1 = plt.subplots()
+fig, ax1 = plt.subplots(figsize=(7,4))
 ax2 = ax1.twinx()
 ax1.set_ylim(0, 1)
 
@@ -43,8 +45,8 @@ ax1.legend(handles=leg1, loc="upper left")
 ax2.legend(handles=leg2, loc="upper right")
 
 rmse = np.std(ndata-data2.values[:, 1])
-plt.text(.8, -.1, "RMSE={:.3f}".format(rmse),
-         color="darkred", transform=ax1.transAxes)
+plt.text(.8, -.15, "RMSE={:.3f}".format(rmse),
+         color="darkred", size=14, transform=ax1.transAxes)
 
 fig.tight_layout()
 
