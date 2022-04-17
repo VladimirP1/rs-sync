@@ -5,11 +5,10 @@
 #include "inline_utils.hpp"
 #include "optdata.hpp"
 
-
 void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma::mat& problem) {
     const auto& flow = data.flows.data.at(frame);
     gyro_delay /= 1000.;
-    
+
     arma::mat ap = flow.rows(0, 2);
     arma::mat bp = flow.rows(3, 5);
     double baset = ((frame / data.flows.fps) - data.quats_start + gyro_delay) * data.sample_rate;
@@ -31,13 +30,13 @@ void opt_compute_problem(int frame, double gyro_delay, const OptData& data, arma
     }
 }
 
-arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
+arma::vec3 opt_guess_translational_motion(const arma::mat& problem, int max_iters) {
     arma::mat nproblem = problem;
     nproblem.each_row([](arma::mat& m) { m = safe_normalize(m); });
 
     arma::vec3 best_sol;
     double least_med = std::numeric_limits<double>::infinity();
-    for (int i = 0; i < 200; ++i) {
+    for (int i = 0; i < max_iters; ++i) {
         int vs[2];
         vs[0] = vs[1] = mtrand(0, problem.n_rows - 1);
         while (vs[1] == vs[0]) vs[1] = mtrand(0, problem.n_rows - 1);
@@ -56,4 +55,25 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem) {
         }
     }
     return best_sol;
+}
+
+std::pair<double, double> pre_sync(OptData& opt_data, int frame_begin, int frame_end, double rough_delay,
+                double search_radius, double step) {
+    std::vector<std::pair<double, double>> results;
+    for (double delay = rough_delay - search_radius; delay < rough_delay + search_radius;
+         delay += step) {
+        double cost = 0;
+        for (auto& [frame, _] : opt_data.flows.data) {
+            if (frame < frame_begin || frame >= frame_end) continue;
+            arma::mat P, M;
+            opt_compute_problem(frame, delay, opt_data, P);
+            M = opt_guess_translational_motion(P, 20);
+            double k = 1 / arma::norm(P * M) * 1e2;
+            arma::mat r = (P * M) * (k / arma::norm(M));
+            arma::mat rho = arma::log1p(r % r);
+            cost += sqrt(arma::accu(arma::sqrt(rho)));
+        }
+        results.emplace_back(cost, delay);
+    }
+    return *std::min_element(results.begin(), results.end());
 }

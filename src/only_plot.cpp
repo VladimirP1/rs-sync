@@ -19,34 +19,6 @@ static double calc(arma::mat P, arma::mat M, double k) {
     return sqrt(arma::accu(arma::sqrt(rho)));
 }
 
-
-arma::vec3 opt_guess_translational_motion2(const arma::mat& problem) {
-    arma::mat nproblem = problem;
-    nproblem.each_row([](arma::mat& m) { m = safe_normalize(m); });
-
-    arma::vec3 best_sol;
-    double least_med = std::numeric_limits<double>::infinity();
-    for (int i = 0; i < 20; ++i) {
-        int vs[2];
-        vs[0] = vs[1] = mtrand(0, problem.n_rows - 1);
-        while (vs[1] == vs[0]) vs[1] = mtrand(0, problem.n_rows - 1);
-
-        arma::mat v =
-            arma::trans(safe_normalize(arma::cross(problem.row(vs[0]), problem.row(vs[1]))));
-
-        arma::mat residuals = nproblem * v;
-        arma::mat residuals2 = residuals % residuals;
-
-        std::sort(residuals2.begin(), residuals2.end());
-        double med = residuals2(residuals2.n_rows / 4, 0);
-        if (med < least_med) {
-            least_med = med;
-            best_sol = v;
-        }
-    }
-    return best_sol;
-}
-
 static constexpr const char* variants[] = {
     "YxZ", "Xyz", "XZy", "Zxy", "zyX", "yxZ", "ZXY", "zYx", "ZYX", "yXz", "YZX", "XyZ",
     "Yzx", "zXy", "YXz", "xyz", "yZx", "XYZ", "zxy", "xYz", "XYz", "zxY", "zXY", "xZy",
@@ -64,7 +36,7 @@ void find_orient() {
         for (auto& [frame, _] : opt_data.flows.data) {
             arma::mat P, M;
             opt_compute_problem(frame, -34, opt_data, P);
-            M = opt_guess_translational_motion2(P);
+            M = opt_guess_translational_motion(P, 20);
             double k = 1 / arma::norm(P * M) * 1e2;
             cost += calc(P, M, k);
         }
@@ -94,7 +66,7 @@ int main(int argc, char** argv) {
         for (auto& [frame, _] : opt_data.flows.data) {
             arma::mat P, M;
             opt_compute_problem(frame, delay, opt_data, P);
-            M = opt_guess_translational_motion2(P);
+            M = opt_guess_translational_motion(P, 20);
             double k = 1 / arma::norm(P * M) * 1e2;
             // std::cerr << k << std::endl;
 

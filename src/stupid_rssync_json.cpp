@@ -51,7 +51,7 @@ struct FrameState {
     arma::mat gyro_delay;
 
     double var_k = 1e3;
-    
+
    private:
     static constexpr double kStep = 1e-6;
 
@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
 
     std::vector<int> syncpoints;
     if (params["syncpoints_format"] == "auto") {
-        for (int pos = frame_start; pos + syncpoint_distance < frame_end; pos += syncpoint_distance) 
+        for (int pos = frame_start; pos + syncpoint_distance < frame_end; pos += syncpoint_distance)
             syncpoints.push_back(pos);
     } else if (params["syncpoints_format"] == "array") {
         for (int pos : params["syncpoints_array"]) {
@@ -195,7 +195,12 @@ int main(int argc, char** argv) {
     for (auto pos : syncpoints) {
         std::cerr << pos << std::endl;
         double delay = input["initial_guess"].get<double>();
-        for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + sync_window).delay;
+        if (input.contains("use_simple_presync") && input["use_simple_presync"].get<bool>()) {
+            delay = pre_sync(opt_data, pos, pos + sync_window, delay,
+                             input["simple_presync_radius"].get<double>(),
+                             input["simple_presync_step"].get<int>()).second;
+        }
+        delay = opt_run(opt_data, delay, pos, pos + sync_window).delay;
         csv << pos << "," << delay << std::endl;
     }
 
