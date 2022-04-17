@@ -159,15 +159,15 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
                 gsl_multimin_fdfminimizer_alloc(gsl_multimin_fdfminimizer_vector_bfgs2, 3);
 
             arma::wrap(motion_vec) = fs->motion_vec;
-            gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-2, 1e-2);
+            gsl_multimin_fdfminimizer_set(minimizer, &func.gsl_func, motion_vec, 1e-1, 1e-2);
 
-            for (int j = 0; j < 500; ++j) {
+            for (int j = 0; j < 200; ++j) {
                 auto r = gsl_multimin_fdfminimizer_iterate(minimizer);
                 if (r != GSL_SUCCESS) {
                     break;
                 }
 
-                if (gsl_multimin_test_gradient(minimizer->gradient, 1e-6) == GSL_SUCCESS) {
+                if (gsl_multimin_test_gradient(minimizer->gradient, 1e-4) == GSL_SUCCESS) {
                     break;
                 }
             }
@@ -195,7 +195,7 @@ double opt_run(OptData& data, double initial_delay, int min_frame = std::numeric
         // Optimize delay
         auto info = do_opt_delay();
 
-        if (info.step_size < 1e-6) {
+        if (info.step_size < 1e-4) {
             converge_counter++;
         } else {
             converge_counter = 0;

@@ -43,28 +43,13 @@ int main(int argc, char** argv) {
     Lens lens = lens_load(input["lens_profile"]["path"].get<std::string>().c_str(),
                           input["lens_profile"]["name"].get<std::string>().c_str());
 
-    int frame_or_begin = atoi(argv[2]);
-    int frame_or_end = atoi(argv[3]);
+    int frame_begin = input["frame_range"][0].get<int>();
+    int frame_end = input["frame_range"][1].get<int>();
 
+    auto start_ts = std::chrono::steady_clock::now();
     track_frames(opt_data.flows, lens, input["video_path"].get<std::string>().c_str(),
-                 frame_or_begin, frame_or_end);
+                 frame_begin, frame_end);
+    auto stop_ts = std::chrono::steady_clock::now();
 
-    std::vector<std::tuple<double, double, const char*>> results;
-    for (int i = 0; i < variants_total; ++i) {
-        std::cout << "testing " << variants[i] << "..." << std::endl;
-        optdata_fill_gyro(opt_data, input["gyro_path"].get<std::string>().c_str(), variants[i]);
-
-        auto sync = pre_sync(
-            opt_data, frame_or_begin, frame_or_end, input["initial_guess"].get<double>(),
-            input["simple_presync_radius"].get<double>(), input["simple_presync_step"].get<int>());
-
-        results.emplace_back(sync.first, sync.second, variants[i]);
-    }
-
-    std::sort(results.begin(), results.end());
-
-    std::cout << std::endl << "----- Top-5 results -----" << std::endl;
-    for (int i = 0; i < 5; ++i) {
-        std::cout << std::get<2>(results[i]) << " " << std::get<0>(results[i]) << std::endl;
-    }
+    std::cout << "avg fps = " << (frame_end - frame_begin) * 1e3 / std::chrono::duration_cast<std::chrono::milliseconds>(stop_ts - start_ts).count() << std::endl;
 }
