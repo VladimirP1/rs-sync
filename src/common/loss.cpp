@@ -69,17 +69,18 @@ std::pair<double, double> pre_sync(OptData& opt_data, int frame_begin, int frame
     }
     for (double delay = rough_delay - search_radius; delay < rough_delay + search_radius;
          delay += step) {
-        std::atomic<double> cost;
+        std::mutex mtx;
+        double cost{};
         std::for_each(std::execution::par, frames.begin(), frames.end(),
-                      [frame_begin, frame_end, delay, &opt_data, &cost](int frame) {
+                      [frame_begin, frame_end, delay, &opt_data, &cost, &mtx](int frame) {
                           arma::mat P, M;
                           opt_compute_problem(frame, delay, opt_data, P);
                           M = opt_guess_translational_motion(P, 20);
                           double k = 1 / arma::norm(P * M) * 1e2;
                           arma::mat r = (P * M) * (k / arma::norm(M));
                           arma::mat rho = arma::log1p(r % r);
-
-                          cost.fetch_add(sqrt(arma::accu(arma::sqrt(rho))));
+                          std::unique_lock<std::mutex> lock(mtx);
+                          cost += sqrt(arma::accu(arma::sqrt(rho)));
                       });
         results.emplace_back(cost, delay);
     }
