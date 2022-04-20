@@ -4,35 +4,27 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.stats as st
 
-plt.rcParams.update({
-    "pgf.texsystem": "pdflatex",
-    "pgf.preamble": "\n".join([
-        r"\usepackage[utf8]{inputenc}",
-        r"\usepackage[russian]{babel}",
-    ])
-})
-
 plt.rc('axes',  titlesize=14)
 plt.rc('axes', labelsize=12)
 plt.rc('legend', fontsize=14)
-plt.rc('xtick', labelsize=10)
-plt.rc('ytick', labelsize=10)
+plt.rc('xtick', labelsize=10)   
+plt.rc('ytick', labelsize=10)    
 
 ax2_yrange = 10
 
-fpss = [60, 60, 60, 60]
+fpss = [30, 30, 60, 60]
 
 titles = [
-    "table",
-    "Упрощённая модификация, table",
+    "trail running 1",
+    "Упрощённая модификация, trail running 1",
     "fpv flight 1",
     "Упрощённая модификация, fpv flight 1"
 ]
 
-files = ["sync_GX012439.csv", "_sync_GX012439.csv",
+files = ["sync_GH011230.csv", "_sync_GH011230.csv",
          "sync_GX012440.csv", "_sync_GX012440.csv"]
 
-fig, axz = plt.subplots(2, 2, figsize=(9, 9))
+fig, axz = plt.subplots(2, 2, figsize=(14, 9))
 print(type(axz))
 for ax1, file, title, fps in zip(axz.flatten(), files, titles, fpss):
     ax1.set_title(title)
@@ -53,7 +45,6 @@ for ax1, file, title, fps in zip(axz.flatten(), files, titles, fpss):
 
     line_delay, = ax2.plot(data2.values[:, 0]/fps, data2.values[:,
                                                                 1], color='red', alpha=.5, label='задержка гироскопа')
-
     ax1.grid(axis='x')
     ax2.grid(axis='y')
 
@@ -79,4 +70,4 @@ fig.legend(handles=[line_difference], loc=(.8, 0))
 
 plt.show()
 
-plt.savefig('fig.pgf', backend='pgf')
+plt.savefig('fig.png')

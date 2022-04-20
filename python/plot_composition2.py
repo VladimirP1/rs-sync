@@ -23,10 +23,10 @@ ax2_yrange = 10
 fpss = [30, 30, 60, 60]
 
 titles = [
-    "trail running 1, with translation",
-    "trail running 1, no translation",
-    "skiing, with translation",
-    "skiing, no translation"
+    "trail running 1",
+    "Упрощённая модификация, trail running 1",
+    "skiing",
+    "Упрощённая модификация, skiing"
 ]
 
 files = ["sync_GH011230.csv", "_sync_GH011230.csv",
@@ -47,12 +47,15 @@ for ax1, file, title, fps in zip(axz.flatten(), files, titles, fpss):
     ax2.set_ylim(ax2_ymid - ax2_yrange, ax2_ymid + ax2_yrange)
 
     line_difference, = ax1.plot(data2.values[:, 0]/fps, np.abs(ndata -
-                                                               data2.values[:, 1]), color='green', alpha=.5, label='difference')
+                                                               data2.values[:, 1]), color='green', alpha=.5, label='разность')
     line_lsq_fit, = ax2.plot(data2.values[:, 0]/fps, ndata, color='orange',
-                             alpha=.5, label='least squares fit on gyro delay')
+                             alpha=.5, label='линейная регрессия')
 
     line_delay, = ax2.plot(data2.values[:, 0]/fps, data2.values[:,
-                                                                1], color='red', alpha=.5, label='gyro delay')
+                                                                1], color='red', alpha=.5, label='задержка гироскопа')
+
+    ax1.grid(axis='x')
+    ax2.grid(axis='y')
 
     ax1.set_xlabel("Позиция видео (сек)")
     ax2.set_ylabel("Задержка гироскопа (мс)")
@@ -70,8 +73,8 @@ for ax1, file, title, fps in zip(axz.flatten(), files, titles, fpss):
 fig.tight_layout()
 fig.subplots_adjust(bottom=0.1)
 fig.legend(handles=[line_delay], loc=(0, 0))
-fig.legend(handles=[line_lsq_fit], loc=(.2, 0))
-fig.legend(handles=[line_difference], loc=(.6, 0))
+fig.legend(handles=[line_lsq_fit], loc=(.4, 0))
+fig.legend(handles=[line_difference], loc=(.8, 0))
 
 
 plt.show()
