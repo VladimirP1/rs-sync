@@ -87,7 +87,7 @@ opt_result opt_run(OptData& data, double initial_delay,
     for (auto& [frame, _] : data.flows.data) {
         if (frame < min_frame || frame > max_frame) continue;
         costs.push_back(std::make_unique<FrameState>(frame, &data));
-        costs.back()->var_k = costs.back()->GuessK(gyro_delay[0]);
+        // costs.back()->var_k = costs.back()->GuessK(gyro_delay[0]);
     }
 
     struct delay_opt_info {
