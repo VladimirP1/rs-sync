@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
         if (input.contains("use_simple_presync") && input["use_simple_presync"].get<bool>()) {
             delay = pre_sync(opt_data, pos, pos + sync_window, delay,
                              input["simple_presync_radius"].get<double>(),
-                             input["simple_presync_step"].get<int>()).second;
+                             input["simple_presync_step"].get<double>()).second;
         }
         for (int i = 0; i < 4; ++i) delay = opt_run(opt_data, delay, pos, pos + sync_window);
         csv << pos << "," << delay << std::endl;
