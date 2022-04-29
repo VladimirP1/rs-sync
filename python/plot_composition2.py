@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import sys
 import numpy as np
 import pandas as pd
@@ -23,10 +25,10 @@ ax2_yrange = 10
 fpss = [30, 30, 60, 60]
 
 titles = [
-    "trail running 1",
-    "Упрощённая модификация, trail running 1",
-    "skiing",
-    "Упрощённая модификация, skiing"
+    "Полная версия, trail running 1",
+    "Упрощённая версия, trail running 1",
+    "Полная версия, skiing",
+    "Упрощённая версия, skiing"
 ]
 
 files = ["sync_GH011230.csv", "_sync_GH011230.csv",

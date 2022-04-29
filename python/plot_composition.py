@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import sys
 import numpy as np
 import pandas as pd
@@ -23,10 +25,10 @@ ax2_yrange = 10
 fpss = [60, 60, 60, 60]
 
 titles = [
-    "table",
-    "Упрощённая модификация, table",
-    "fpv flight 1",
-    "Упрощённая модификация, fpv flight 1"
+    "Полная версия, table",
+    "Упрощённая версия, table",
+    "Полная версия, fpv flight 1",
+    "Упрощённая версия, fpv flight 1"
 ]
 
 files = ["sync_GX012439.csv", "_sync_GX012439.csv",

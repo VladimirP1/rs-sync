@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import sys
 import numpy as np
 import pandas as pd
@@ -14,7 +16,7 @@ plt.rcParams.update({
 
 plt.rc('axes', labelsize=14)
 
-fps = 60
+fps = 30
 ax2_yrange = 10
 
 data2 = pd.read_csv(sys.argv[1], header=None)
