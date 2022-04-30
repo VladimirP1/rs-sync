@@ -6,14 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.stats as st
 
-plt.rcParams.update({
-    "pgf.texsystem": "pdflatex",
-    "pgf.preamble": "\n".join([
-        r"\usepackage[utf8]{inputenc}",
-        r"\usepackage[russian]{babel}",
-    ])
-})
-
 plt.rc('axes', labelsize=14)
 
 fps = 30
@@ -55,5 +47,3 @@ fig.tight_layout()
 print('rms error:', rmse)
 
 plt.show()
-
-plt.savefig('fig.pgf', backend='pgf')

@@ -15,7 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
-// Either fixed-sample-rate or variable sr data can be passed (int the latter case it will be interpolated internally)
+// Either fixed-sample-rate or variable sr data can be passed (int the latter case it will be
+// interpolated internally)
 #if 0
 void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* orient) {
     tp_gyrodata data = tp_load_gyro(filename, orient);
@@ -230,9 +231,27 @@ int main(int argc, char** argv) {
 
     std::ofstream csv(output["csv_path"].get<std::string>());
 
+// Demonstration of how to export the loss cost plot from pre-sync
+#if 1
+    {
+        const size_t debug_plot_size = 200;
+        std::vector<double> delays(debug_plot_size);
+        std::vector<double> costs(debug_plot_size);
+
+        sp->DebugPreSync(input["initial_guess"].get<double>() / 1000, frame_start,
+                         frame_start + sync_window, input["simple_presync_radius"].get<double>() / 1000,
+                         delays.data(), costs.data(), debug_plot_size);
+
+        std::ofstream debug_out("debug.csv");
+        for (size_t i = 0; i < debug_plot_size; ++i) {
+            debug_out << delays[i] << "," << costs[i] << "\n";
+        }
+    }
+#endif
+
     for (auto pos : syncpoints) {
         std::cerr << pos << std::endl;
-        double delay = input["initial_guess"].get<double>();
+        double delay = input["initial_guess"].get<double>() / 1000;
         if (input.contains("use_simple_presync") && input["use_simple_presync"].get<bool>()) {
             delay = sp->PreSync(delay, pos, pos + sync_window,
                                 input["simple_presync_step"].get<double>() / 1000.,

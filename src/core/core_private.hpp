@@ -45,12 +45,17 @@ struct FrameState {
 struct SyncProblemPrivate : public ISyncProblem {
     void SetGyroQuaternions(const double* data, size_t count, double sample_rate,
                             double first_timestamp) override;
-    void SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats, size_t count) override;
+    void SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats,
+                            size_t count) override;
     void SetTrackResult(int frame, const double* ts_a, const double* ts_b, const double* rays_a,
                         const double* rays_b, size_t count) override;
     void SetFps(double fps) override;
-    double PreSync(double initial_delay, int frame_begin, int frame_end,double search_step, double search_radius) override;
+    double PreSync(double initial_delay, int frame_begin, int frame_end, double search_step,
+                   double search_radius) override;
     double Sync(double initial_delay, int frame_begin, int frame_end) override;
+
+    void DebugPreSync(double initial_delay, int frame_begin, int frame_end, double search_radius,
+                      double* delays, double* costs, int point_count) override;
 
     OptData problem;
 };

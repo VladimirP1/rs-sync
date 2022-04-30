@@ -19,6 +19,10 @@ class ISyncProblem {
     virtual double PreSync(double initial_delay, int frame_begin, int frame_end, double search_step,
                            double search_radius) = 0;
     virtual double Sync(double initial_delay, int frame_begin, int frame_end) = 0;
+
+    virtual void DebugPreSync(double initial_delay, int frame_begin, int frame_end,
+                                      double search_radius, double* delays, double* costs,
+                                      int point_count) = 0;
 };
 
 RSSYNC_API ISyncProblem* CreateSyncProblem();

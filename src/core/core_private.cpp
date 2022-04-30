@@ -160,7 +160,7 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
         auto ts = new_timestamps_vec[i];
         size_t idx = std::lower_bound(timestamps_us, timestamps_us + count, ts) - timestamps_us;
         double t =
-             1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
+            1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
         new_quats.col(i) =
             quat_slerp(arma::vec4(quats + 4 * (idx - 1)), arma::vec4(quats + 4 * idx), t);
     }
@@ -301,6 +301,33 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
     }
 
     return gyro_delay[0];
+}
+
+void SyncProblemPrivate::DebugPreSync(double initial_delay, int frame_begin, int frame_end,
+                                      double search_radius, double* delays, double* costs,
+                                      int point_count) {
+    std::vector<int> frames;
+    for (auto& [frame, _] : problem.frame_data) {
+        if (frame < frame_begin || frame >= frame_end) continue;
+        frames.push_back(frame);
+    }
+    for (int i = 0; i < point_count; ++i) {
+        double delay = initial_delay - search_radius + 2 * search_radius * i / (point_count - 1);
+        std::mutex mtx;
+        double cost{};
+        std::for_each(std::execution::par, frames.begin(), frames.end(),
+                      [this, frame_begin, frame_end, delay, &cost, &mtx](int frame) {
+                          arma::mat P = opt_compute_problem(frame, delay, problem);
+                          arma::mat M = opt_guess_translational_motion(P, 20);
+                          double k = 1 / arma::norm(P * M) * 1e2;
+                          arma::mat r = (P * M) * (k / arma::norm(M));
+                          arma::mat rho = arma::log1p(r % r);
+                          std::unique_lock<std::mutex> lock(mtx);
+                          cost += sqrt(arma::accu(arma::sqrt(rho)));
+                      });
+        delays[i] = delay;
+        costs[i] = cost;
+    }
 }
 
 ISyncProblem* CreateSyncProblem() { return new SyncProblemPrivate(); }
