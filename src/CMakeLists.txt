@@ -7,4 +7,4 @@ add_subdirectory(core_support)
 add_subdirectory(core)
 
 add_executable(core_testcode core_testcode.cpp)
-target_link_libraries(core_testcode PRIVATE rssync_core telemetry_parser_cpp ${OpenCV_LIBRARIES} nlohmann_json::nlohmann_json)
+target_link_libraries(core_testcode PRIVATE rssync_core rssync_coresupport telemetry_parser_cpp ${OpenCV_LIBRARIES} nlohmann_json::nlohmann_json)
