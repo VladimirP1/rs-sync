@@ -4,8 +4,10 @@
 #include <quat.hpp>
 #include <backtrack.hpp>
 
-#define OPTIM_ENABLE_ARMA_WRAPPERS
-#include <optim.hpp>
+#include <ensmallen_bits/log.hpp>
+#include <ensmallen_bits/callbacks/callbacks.hpp>
+#include <ensmallen_bits/utility/arma_traits.hpp>
+#include <ensmallen_bits/lbfgs/lbfgs.hpp>
 
 #include <execution>
 
@@ -204,20 +206,36 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
     arma::mat delay_v(1, 1);
     auto do_opt_motion = [&]() {
         std::for_each(std::execution::par, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
-            optim::algo_settings_t settings;
-            settings.iter_max = 200;
-            settings.grad_err_tol = 1e-4;
-            settings.bfgs_settings.wolfe_cons_1 = 1e-5;
-            settings.bfgs_settings.wolfe_cons_2 = 1e-4;
-            optim::bfgs(
-                fs->motion_vec,
-                [&fs, gyro_delay](const arma::vec& vals_inp, arma::vec* grad_out, void* opt_data) {
-                    arma::mat cost, del_jac, mot_jac;
-                    fs->Loss(gyro_delay, vals_inp, cost, del_jac, mot_jac);
-                    if (grad_out) *grad_out = mot_jac.t();
+            ens::L_BFGS lbfgs;
+            lbfgs.MaxIterations() = 200;
+
+            struct OptimizedFunction {
+                OptimizedFunction(FrameState* fs, arma::mat gyro_delay)
+                    : fs(fs), gyro_delay(gyro_delay) {}
+
+                double Evauluate(const arma::mat& x) {
+                    arma::mat cost;
+                    fs->Loss(gyro_delay, x, cost);
                     return cost[0];
-                },
-                nullptr, settings);
+                }
+
+                void Gradient(const arma::mat& x, arma::mat& grad) {
+                    EvaluateWithGradient(x, grad);
+                }
+
+                double EvaluateWithGradient(const arma::mat& x, arma::mat& grad) {
+                    arma::mat cost, del_jac;
+                    fs->Loss(gyro_delay, x, cost, del_jac, grad);
+                    grad = grad.t();
+                    return cost[0];
+                }
+
+                FrameState* fs;
+                arma::mat gyro_delay;
+            };
+
+            OptimizedFunction fun{fs.get(), gyro_delay};
+            lbfgs.Optimize(fun, fs->motion_vec);
         });
     };
 

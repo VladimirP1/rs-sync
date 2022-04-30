@@ -1,3 +1,3 @@
 add_library(rssync_core core_private.cpp)
 target_include_directories(rssync_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/public)
-target_link_libraries(rssync_core PRIVATE rssync_coresupport optim)
+target_link_libraries(rssync_core PRIVATE rssync_coresupport)

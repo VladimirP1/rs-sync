@@ -32,7 +32,7 @@ struct FrameState {
     double GuessK(double gyro_delay) const;
 
     arma::mat gyro_delay;
-    arma::vec3 motion_vec;
+    arma::mat motion_vec;
     double var_k = 1e3;
 
    private:
