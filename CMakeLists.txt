@@ -12,4 +12,7 @@ set_target_properties(
         IMPORTED_NO_SONAME TRUE
 )
 
+add_library(optim INTERFACE)
+target_include_directories(optim INTERFACE ext/optim)
+
 add_subdirectory(src)
