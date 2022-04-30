@@ -15,6 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
+// Either fixed-sample-rate or variable sr data can be passed (int the latter case it will be interpolated internally)
+#if 0
 void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* orient) {
     tp_gyrodata data = tp_load_gyro(filename, orient);
     arma::mat timestamps(data.timestamps, 1, data.samples);
@@ -26,10 +28,31 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
         quats.col(i) =
-            arma::normalise(quat_prod(quats.col(i - 1), quat_from_aa(gyro.col(i) / sample_rate)));
+            arma::normalise(quat_prod(quats.col(i - 1), quat_from_aa(gyro.col(i) /
+            sample_rate)));
     }
     problem.SetGyroQuaternions(quats.mem, quats.n_cols, sample_rate, timestamps.front());
 }
+#else
+void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* orient) {
+    tp_gyrodata data = tp_load_gyro(filename, orient);
+    arma::mat timestamps(data.timestamps, 1, data.samples);
+    arma::mat gyro(data.gyro, 3, data.samples);
+
+    arma::mat quats(4, gyro.n_cols);
+    quats.col(0) = {1, 0, 0, 0};
+    for (int i = 1; i < quats.n_cols; ++i) {
+        quats.col(i) = arma::normalise(quat_prod(
+            quats.col(i - 1), quat_from_aa(gyro.col(i) * (timestamps(i) - timestamps(i - 1)))));
+    }
+
+    std::vector<uint64_t> i_timestamps;
+    for (auto ts : timestamps) {
+        i_timestamps.push_back(ts * 1000000);
+    }
+    problem.SetGyroQuaternions(i_timestamps.data(), quats.mem, i_timestamps.size());
+}
+#endif
 
 struct Lens {
     double ro{};

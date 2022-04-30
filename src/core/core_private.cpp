@@ -140,6 +140,35 @@ void SyncProblemPrivate::SetGyroQuaternions(const double* data, size_t count, do
     problem.quats = ndspline::make(arma::mat(const_cast<double*>(data), 4, count, false, true));
 }
 
+void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats,
+                                            size_t count) {
+    static constexpr uint64_t k_uhz_in_hz = 1000000ULL;
+    static constexpr uint64_t k_us_in_sec = 1000000ULL;
+    uint64_t actual_sr_uhz =
+        k_uhz_in_hz * k_us_in_sec * count / (timestamps_us[count - 1] - timestamps_us[0]);
+    int rounded_sr =
+        int(round(actual_sr_uhz / 50. / k_uhz_in_hz) * 50 * k_uhz_in_hz);  // round to nearest 50hz
+
+    std::vector<uint64_t> new_timestamps_vec;
+    for (int sample = std::ceil(timestamps_us[0] * rounded_sr);
+         k_us_in_sec * k_uhz_in_hz * sample / rounded_sr < timestamps_us[count - 1]; sample += 1) {
+        new_timestamps_vec.push_back(k_us_in_sec * k_uhz_in_hz * sample / rounded_sr);
+    }
+
+    arma::mat new_quats(4, new_timestamps_vec.size());
+    for (int i = 0; i < new_timestamps_vec.size(); ++i) {
+        auto ts = new_timestamps_vec[i];
+        size_t idx = std::lower_bound(timestamps_us, timestamps_us + count, ts) - timestamps_us;
+        double t =
+             1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
+        new_quats.col(i) =
+            quat_slerp(arma::vec4(quats + 4 * (idx - 1)), arma::vec4(quats + 4 * idx), t);
+    }
+    problem.sample_rate = 1. * rounded_sr / k_uhz_in_hz;
+    problem.quats_start = 1. * new_timestamps_vec[0] / k_us_in_sec;
+    problem.quats = ndspline::make(new_quats);
+}
+
 void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const double* ts_b,
                                         const double* rays_a, const double* rays_b, size_t count) {
     auto& flow = problem.frame_data[frame];
@@ -208,6 +237,7 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
         std::for_each(std::execution::par, costs.begin(), costs.end(), [gyro_delay](auto& fs) {
             ens::L_BFGS lbfgs;
             lbfgs.MaxIterations() = 200;
+            lbfgs.MinGradientNorm() = 1e-4;
 
             struct OptimizedFunction {
                 OptimizedFunction(FrameState* fs, arma::mat gyro_delay)

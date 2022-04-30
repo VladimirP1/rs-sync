@@ -45,6 +45,7 @@ struct FrameState {
 struct SyncProblemPrivate : public ISyncProblem {
     void SetGyroQuaternions(const double* data, size_t count, double sample_rate,
                             double first_timestamp) override;
+    void SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats, size_t count) override;
     void SetTrackResult(int frame, const double* ts_a, const double* ts_b, const double* rays_a,
                         const double* rays_b, size_t count) override;
     void SetFps(double fps) override;

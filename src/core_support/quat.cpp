@@ -52,7 +52,7 @@ static inline arma::vec4 quat_double(arma::vec4 p, arma::vec4 q) {
 
 static inline arma::vec4 quat_bisect(arma::vec4 p, arma::vec4 q) { return (p + q) * .5; }
 
-inline arma::vec4 quat_slerp(arma::vec4 p, arma::vec4 q, double t) {
+arma::vec4 quat_slerp(arma::vec4 p, arma::vec4 q, double t) {
     if (arma::dot(p, q) < 0) {
         q = -q;
     }

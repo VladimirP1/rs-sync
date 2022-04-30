@@ -3,6 +3,7 @@
 #include "export.h"
 
 #include <cstddef>
+#include <cstdint>
 
 class ISyncProblem {
    public:
@@ -10,6 +11,8 @@ class ISyncProblem {
 
     virtual void SetGyroQuaternions(const double* data, size_t count, double sample_rate,
                                     double first_timestamp) = 0;
+    virtual void SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats,
+                                    size_t count) = 0;
     virtual void SetTrackResult(int frame, const double* ts_a, const double* ts_b,
                                 const double* rays_a, const double* rays_b, size_t count) = 0;
     virtual void SetFps(double fps) = 0;
