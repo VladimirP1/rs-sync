@@ -1,5 +1,7 @@
 #pragma once
 
+#include "export.h"
+
 #include <cstddef>
 
 class ISyncProblem {
@@ -16,4 +18,4 @@ class ISyncProblem {
     virtual double Sync(double initial_delay, int frame_begin, int frame_end) = 0;
 };
 
-ISyncProblem* CreateSyncProblem();
+RSSYNC_API ISyncProblem* CreateSyncProblem();
