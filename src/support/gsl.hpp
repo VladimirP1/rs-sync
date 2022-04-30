@@ -58,18 +58,4 @@ struct MultiminFunction {
     }
 };
 
-struct MultiminMinimizer {
-    MultiminMinimizer(const MultiminMinimizer &) = delete;
-    MultiminMinimizer(MultiminMinimizer &&) = delete;
-    MultiminMinimizer &operator=(const MultiminMinimizer &) = delete;
-    MultiminMinimizer &operator=(MultiminMinimizer &&) = delete;
-
-    MultiminMinimizer(const gsl_multimin_fdfminimizer_type *type, size_t n) {
-        minimizer = gsl_multimin_fdfminimizer_alloc(type, n);
-    }
-
-    ~MultiminMinimizer() { gsl_multimin_fdfminimizer_free(minimizer); }
-
-    gsl_multimin_fdfminimizer *minimizer;
-};
 }  // namespace Gsl
