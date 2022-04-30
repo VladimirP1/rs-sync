@@ -6,6 +6,6 @@
 #else
 #define RSSYNC_API __declspec(dllimport)
 #endif
-#elif
+#else
 #define RSSYNC_API
 #endif

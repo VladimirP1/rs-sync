@@ -1,6 +1,7 @@
 set(CMAKE_TOOLCHAIN_FILE ext/vcpkg/scripts/buildsystems/vcpkg.cmake)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 project(rs-sync)
 
