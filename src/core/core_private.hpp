@@ -49,7 +49,6 @@ struct SyncProblemPrivate : public ISyncProblem {
                             size_t count) override;
     void SetTrackResult(int frame, const double* ts_a, const double* ts_b, const double* rays_a,
                         const double* rays_b, size_t count) override;
-    void SetFps(double fps) override;
     double PreSync(double initial_delay, int frame_begin, int frame_end, double search_step,
                    double search_radius) override;
     double Sync(double initial_delay, int frame_begin, int frame_end) override;

@@ -29,8 +29,7 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
         quats.col(i) =
-            arma::normalise(quat_prod(quats.col(i - 1), quat_from_aa(gyro.col(i) /
-            sample_rate)));
+            arma::normalise(quat_prod(quat_from_aa(gyro.col(i) / sample_rate), quats.col(i - 1)));
     }
     problem.SetGyroQuaternions(quats.mem, quats.n_cols, sample_rate, timestamps.front());
 }
@@ -39,12 +38,11 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
     tp_gyrodata data = tp_load_gyro(filename, orient);
     arma::mat timestamps(data.timestamps, 1, data.samples);
     arma::mat gyro(data.gyro, 3, data.samples);
-
     arma::mat quats(4, gyro.n_cols);
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
-        quats.col(i) = arma::normalise(quat_prod(
-            quats.col(i - 1), quat_from_aa(gyro.col(i) * (timestamps(i) - timestamps(i - 1)))));
+        auto q = quat_from_aa(gyro.col(i) * (timestamps(i) - timestamps(i - 1)));
+        quats.col(i) = arma::normalise(quat_prod(q, quats.col(i - 1)));
     }
 
     std::vector<uint64_t> i_timestamps;
@@ -107,8 +105,6 @@ void track_frames(ISyncProblem& problem, Lens lens, const char* filename, int st
         throw std::runtime_error{"Seek failed"};
     }
     double fps = cap.get(cv::CAP_PROP_FPS);
-
-    problem.SetFps(fps);
 
     cv::Ptr<cv::DISOpticalFlow> dis = cv::DISOpticalFlow::create();
 
@@ -239,8 +235,9 @@ int main(int argc, char** argv) {
         std::vector<double> costs(debug_plot_size);
 
         sp->DebugPreSync(input["initial_guess"].get<double>() / 1000, frame_start,
-                         frame_start + sync_window, input["simple_presync_radius"].get<double>() / 1000,
-                         delays.data(), costs.data(), debug_plot_size);
+                         frame_start + sync_window,
+                         input["simple_presync_radius"].get<double>() / 1000, delays.data(),
+                         costs.data(), debug_plot_size);
 
         std::ofstream debug_out("debug.csv");
         for (size_t i = 0; i < debug_plot_size; ++i) {

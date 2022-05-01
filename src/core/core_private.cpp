@@ -15,21 +15,15 @@ arma::mat opt_compute_problem(int frame, double gyro_delay, const OptData& data)
     const auto& flow = data.frame_data.at(frame);
     arma::mat ap = flow.rays_a;
     arma::mat bp = flow.rays_b;
-    double baset = ((frame / data.fps) - data.quats_start + gyro_delay) * data.sample_rate;
     arma::mat at = ((flow.ts_a) - data.quats_start + gyro_delay) * data.sample_rate;
     arma::mat bt = (flow.ts_b - data.quats_start + gyro_delay) * data.sample_rate;
 
     arma::mat problem(at.n_cols, 3);
-    arma::vec4 base_conj = quat_conj(data.quats.eval(baset));
     for (int i = 0; i < at.n_cols; ++i) {
         arma::vec4 a = data.quats.eval(at[i]);
         arma::vec4 b = data.quats.eval(bt[i]);
-        double inv_base_a_norm = (1. / arma::norm(base_conj)) * (1. / arma::norm(a));
-        double inv_base_b_norm = (1. / arma::norm(base_conj)) * (1. / arma::norm(b));
-        arma::vec4 rot_a = quat_prod(base_conj, a) * inv_base_a_norm;
-        arma::vec4 rot_b = quat_prod(base_conj, b) * inv_base_b_norm;
-        arma::vec3 ar = quat_rotate_point(quat_conj(rot_a), ap.col(i));
-        arma::vec3 br = quat_rotate_point(quat_conj(rot_b), bp.col(i));
+        arma::vec3 ar = quat_rotate_point(quat_conj(arma::normalise(a)), ap.col(i));
+        arma::vec3 br = quat_rotate_point(quat_conj(arma::normalise(b)), bp.col(i));
         problem.row(i) = arma::trans(arma::cross(ar, br));
     }
 
@@ -177,8 +171,6 @@ void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const dou
     flow.ts_a = arma::mat(const_cast<double*>(ts_a), 1, count, false, true);
     flow.ts_b = arma::mat(const_cast<double*>(ts_b), 1, count, false, true);
 }
-
-void SyncProblemPrivate::SetFps(double fps) { problem.fps = fps; }
 
 double SyncProblemPrivate::PreSync(double initial_delay, int frame_begin, int frame_end,
                                    double search_step, double search_radius) {
