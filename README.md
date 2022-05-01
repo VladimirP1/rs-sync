@@ -36,8 +36,11 @@ The executable `core_testcode` accepts a single argument on the command line whi
     }
 
 ```
+
 ***WARNING:*** `gyro_orientation` cannot be blindly copied from GyroFlow, because it is not defined in the same way.
 I used the code in `src/guess_orient_json.cpp` on the `iter2` branch for finding the orientation. It basically tries all orientations and selects the one with lowest loss function value.
+
+***NOTE:*** Time in JSON is specified in miliseconds.
 
 The file mentioned in `input.lens_profile.path` file should contain the lens profile definitions in the following form:
 ```
@@ -53,6 +56,8 @@ hero6_27k_43 0.01111 1186 1186 1355.389 1020.317 0.04440465777694087 0.019467899
 There's an interface called `ISyncProblem`, instances can be created using `CreateSyncProblem()`.
 
 1. Gyro quaternions have to be provided using one of `SetGyroQuaternions` overloads. One overload is for fixed sample rate data, the other is for variable. Variable sample rate data will be interpolated into fixed sample rate data internally.
-2. Tracking data has to be provided for each frame. This consists of rays (as unit vectors) corresponding to tracked image features from current to next frame and their timestamps.
+2. Tracking data has to be provided for each frame using `SetTrackResult`. If there's no data for some frames, just skip them. This consists of rays (as unit vectors) corresponding to tracked image features from current to next frame and their timestamps.
 3. Call `PreSync` to find coarse sync. This is basically a brute-force search on an approxximation of the loss function. The loss function can be exported for plotting using the `DebugPreSync` method.
 4. Use the offset found with `PreSync` as an initial delay for `Sync`. The example code does this multiple times. This seemed to work better because there's every `Sync` the translation directions for each frame and some optimization hyperparameters are reestimated.
+
+***NOTE:*** Time in the library interface is in seconds unless otherwise stated using the `_us` suffix.
