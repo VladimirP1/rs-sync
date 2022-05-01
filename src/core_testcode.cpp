@@ -15,8 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
-// Either fixed-sample-rate or variable sr data can be passed (int the latter case it will be
-// interpolated internally)
+// Either fixed-sample-rate or variable sr data can be passed to the library (in the latter case it
+// will be interpolated internally)
 #if 0
 void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* orient) {
     tp_gyrodata data = tp_load_gyro(filename, orient);
