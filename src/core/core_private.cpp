@@ -20,10 +20,10 @@ arma::mat opt_compute_problem(int frame, double gyro_delay, const OptData& data)
 
     arma::mat problem(at.n_cols, 3);
     for (int i = 0; i < at.n_cols; ++i) {
-        arma::vec4 a = data.quats.eval(at[i]);
-        arma::vec4 b = data.quats.eval(bt[i]);
-        arma::vec3 ar = quat_rotate_point(quat_conj(arma::normalise(a)), ap.col(i));
-        arma::vec3 br = quat_rotate_point(quat_conj(arma::normalise(b)), bp.col(i));
+        arma::vec4 a = arma::normalise(data.quats.eval(at[i]));
+        arma::vec4 b = arma::normalise(data.quats.eval(bt[i]));
+        arma::vec3 ar = quat_rotate_point(quat_conj(a), ap.col(i));
+        arma::vec3 br = quat_rotate_point(quat_conj(b), bp.col(i));
         problem.row(i) = arma::trans(arma::cross(ar, br));
     }
 
