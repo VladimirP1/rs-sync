@@ -227,7 +227,7 @@ int main(int argc, char** argv) {
 
     std::ofstream csv(output["csv_path"].get<std::string>());
 
-// Demonstration of how to export the loss cost plot from pre-sync
+// Demonstration of how to export the cost plot from pre-sync
 #if 1
     {
         const size_t debug_plot_size = 200;
