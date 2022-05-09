@@ -109,11 +109,14 @@ void track_frames(ISyncProblem& problem, Lens lens, const char* filename, int st
     cv::Ptr<cv::DISOpticalFlow> dis = cv::DISOpticalFlow::create();
 
     cv::Mat next, cur, of;
+    double cur_ts{}, next_ts{};
     if (!cap.read(cur)) throw std::runtime_error{"frame read failed"};
+    cur_ts = cap.get(cv::CAP_PROP_POS_MSEC);
     cv::cvtColor(cur, cur, cv::COLOR_BGR2GRAY);
     for (int frame = start_frame; frame < end_frame; ++frame) {
         std::cerr << "processing frame " << frame << std::endl;
         if (!cap.read(next)) throw std::runtime_error{"frame read failed"};
+        next_ts = cap.get(cv::CAP_PROP_POS_MSEC);
         cv::cvtColor(next, next, cv::COLOR_BGR2GRAY);
 
         dis->calc(cur, next, of);
@@ -138,8 +141,8 @@ void track_frames(ISyncProblem& problem, Lens lens, const char* filename, int st
             arma::vec2 a = lens_undistort_point(lens, points_a[i]);
             arma::vec2 b = lens_undistort_point(lens, points_b[i]);
 
-            double ts_a = (frame + 0.) / fps + lens.ro * (points_a[i][1] / cur.rows);
-            double ts_b = (frame + 1.) / fps + lens.ro * (points_b[i][1] / cur.rows);
+            double ts_a = cur_ts / 1000. + lens.ro * (points_a[i][1] / cur.rows);
+            double ts_b = next_ts / 1000. + lens.ro * (points_b[i][1] / cur.rows);
 
             points3d_a.submat(0, i, 1, i) = a;
             points3d_b.submat(0, i, 1, i) = b;
@@ -154,6 +157,7 @@ void track_frames(ISyncProblem& problem, Lens lens, const char* filename, int st
         problem.SetTrackResult(frame, tss_a.mem, tss_b.mem, points3d_a.mem, points3d_b.mem,
                                points_a.size());
         cur = std::move(next);
+        cur_ts = next_ts;
     }
 }
 
