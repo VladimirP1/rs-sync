@@ -172,13 +172,14 @@ void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const dou
     flow.ts_b = arma::mat(const_cast<double*>(ts_b), 1, count, false, true);
 }
 
-double SyncProblemPrivate::PreSync(double initial_delay, int frame_begin, int frame_end,
-                                   double search_step, double search_radius) {
-    return pre_sync(problem, frame_begin, frame_end, initial_delay, search_radius, search_step)
-        .second;
+std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int frame_begin,
+                                                      int frame_end, double search_step,
+                                                      double search_radius) {
+    return pre_sync(problem, frame_begin, frame_end, initial_delay, search_radius, search_step);
 }
 
-double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame_end) {
+std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int frame_begin,
+                                                   int frame_end) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = initial_delay;
 
@@ -207,7 +208,7 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
         return std::make_pair(cost[0], delay_g);
     });
 
-    delay_optimizer.SetObjective([&](arma::vec x) {
+    auto simple_objective = [&](arma::vec x) {
         std::mutex m;
         arma::mat cost(1, 1);
         std::for_each(std::execution::par, costs.begin(), costs.end(), [x, &cost, &m](auto& fs) {
@@ -217,7 +218,9 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
             cost += cur_cost;
         });
         return cost[0];
-    });
+    };
+
+    delay_optimizer.SetObjective(simple_objective);
 
     struct delay_opt_info {
         double step_size;
@@ -292,7 +295,7 @@ double SyncProblemPrivate::Sync(double initial_delay, int frame_begin, int frame
         std::cerr << gyro_delay[0] << " " << info.step_size << std::endl;
     }
 
-    return gyro_delay[0];
+    return {simple_objective(gyro_delay), gyro_delay[0]};
 }
 
 void SyncProblemPrivate::DebugPreSync(double initial_delay, int frame_begin, int frame_end,

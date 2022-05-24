@@ -41,8 +41,14 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
     arma::mat quats(4, gyro.n_cols);
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
-        auto q = quat_from_aa(gyro.col(i) * (timestamps(i) - timestamps(i - 1)));
-        quats.col(i) = arma::normalise(quat_prod(q, quats.col(i - 1)));
+        arma::vec3 gyro_vec = {-gyro.col(i)[1], gyro.col(i)[0], gyro.col(i)[2]};
+        auto q = quat_from_aa(gyro_vec * (timestamps(i) - timestamps(i - 1)));
+        quats.col(i) = arma::normalise(quat_prod(quats.col(i - 1), q));
+    }
+
+    auto fix_quat = quat_from_aa({M_PI, 0, 0});
+    for (int i = 1; i < quats.n_cols; ++i) {
+        quats.col(i) = quat_conj(quat_prod(quats.col(i), fix_quat));
     }
 
     std::vector<uint64_t> i_timestamps;
@@ -181,6 +187,56 @@ Lens lens_load(const char* filename, const char* preset_name) {
 }
 
 using json = nlohmann::json;
+/*
+// This is the orientation-guessing code
+static constexpr const char* variants[] = {
+    "YxZ", "Xyz", "XZy", "Zxy", "zyX", "yxZ", "ZXY", "zYx", "ZYX", "yXz", "YZX", "XyZ",
+    "Yzx", "zXy", "YXz", "xyz", "yZx", "XYZ", "zxy", "xYz", "XYz", "zxY", "zXY", "xZy",
+    "zyx", "xyZ", "Yxz", "xzy", "yZX", "yzX", "ZYx", "xYZ", "zYX", "ZxY", "yzx", "xZY",
+    "Xzy", "XzY", "YzX", "Zyx", "XZY", "yxz", "xzY", "ZyX", "YXZ", "yXZ", "YZx", "ZXy"};
+
+static constexpr int variants_total = 48;
+
+int main(int argc, char** argv) {
+    std::unique_ptr<ISyncProblem> sp{CreateSyncProblem()};
+
+    std::ifstream ifs(argv[1]);
+    json j = json::parse(ifs);
+
+    int frame_or_begin = atoi(argv[2]);
+    int frame_or_end = atoi(argv[3]);
+
+    json input = j["input"];
+    json params = j["params"];
+    json output = j["output"];
+
+    Lens lens = lens_load(input["lens_profile"]["path"].get<std::string>().c_str(),
+                          input["lens_profile"]["name"].get<std::string>().c_str());
+
+    int sync_window = params["sync_window"].get<int>();
+    int syncpoint_distance = params["syncpoint_distance"].get<int>();
+    track_frames(*sp, lens, input["video_path"].get<std::string>().c_str(), frame_or_begin,
+                 frame_or_end);
+
+    std::vector<std::tuple<double, double, const char*>> results;
+    for (int i = 0; i < variants_total; ++i) {
+        std::cout << "testing " << variants[i] << "..." << std::endl;
+        optdata_fill_gyro(*sp, input["gyro_path"].get<std::string>().c_str(), variants[i]);
+
+        auto sync = sp->PreSync(input["initial_guess"].get<double>(), frame_or_begin, frame_or_end,
+                                input["simple_presync_step"].get<double>() / 1000.,
+                                input["simple_presync_radius"].get<double>() / 1000.);
+        results.emplace_back(sync.first, sync.second, variants[i]);
+    }
+
+    std::sort(results.begin(), results.end());
+
+    std::cout << std::endl << "----- Top-5 results -----" << std::endl;
+    for (int i = 0; i < 5; ++i) {
+        std::cout << std::get<2>(results[i]) << " " << std::get<0>(results[i]) << std::endl;
+    }
+}
+*/
 
 int main(int argc, char** argv) {
     // ISyncProblem* sp = CreateSyncProblem();
@@ -256,9 +312,9 @@ int main(int argc, char** argv) {
         if (input.contains("use_simple_presync") && input["use_simple_presync"].get<bool>()) {
             delay = sp->PreSync(delay, pos, pos + sync_window,
                                 input["simple_presync_step"].get<double>() / 1000.,
-                                input["simple_presync_radius"].get<double>() / 1000.);
+                                input["simple_presync_radius"].get<double>() / 1000.).second;
         }
-        for (int i = 0; i < 4; ++i) delay = sp->Sync(delay, pos, pos + sync_window);
+        for (int i = 0; i < 4; ++i) delay = sp->Sync(delay, pos, pos + sync_window).second;
         csv << pos << "," << 1000 * delay << std::endl;
     }
 
