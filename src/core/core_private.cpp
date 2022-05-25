@@ -161,14 +161,24 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
         size_t idx = std::lower_bound(timestamps_us, timestamps_us + count, ts) - timestamps_us;
         double t =
             1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
-        new_quats.col(i) =
-            quat_slerp(arma::vec4(quats + 4 * (idx - 1)), arma::vec4(quats + 4 * idx), t);
-        panic_to_file("non-finite sample after interpolation", !new_quats.col(i).is_finite());
+        auto a = arma::vec4(quats + 4 * (idx - 1));
+        auto b = arma::vec4(quats + 4 * idx);
+        // clang-format off
+        #if 1 // this is slow, enable only if needed
+        panic_to_file(("set-gyro-quaternions: non-finite gyro sample in arguments (" + std::to_string(a[0]) + "," + std::to_string(a[1]) + "," + std::to_string(a[2]) + "," + std::to_string(a[3]) + ")").c_str(), !a.is_finite());
+        panic_to_file(("set-gyro-quaternions: non-finite gyro sample in arguments (" + std::to_string(b[0]) + "," + std::to_string(b[1]) + "," + std::to_string(b[2]) + "," + std::to_string(b[3]) + ")").c_str(), !b.is_finite());
+        #endif
+        // clang-format on
+        new_quats.col(i) = quat_slerp(a, b, t);
+        panic_to_file("set-gyro-quaternions: non-finite sample after interpolation",
+                      !new_quats.col(i).is_finite());
     }
     problem.sample_rate = 1. * rounded_sr / k_uhz_in_hz;
     problem.quats_start = 1. * new_timestamps_vec[0] / k_us_in_sec;
-    panic_to_file("non-finite sample rate. wtf?", !std::isfinite(problem.sample_rate));
-    panic_to_file("non-finite first timestamp. wtf?", !std::isfinite(problem.quats_start));
+    panic_to_file("set-gyro-quaternions: non-finite sample rate. wtf?",
+                  !std::isfinite(problem.sample_rate));
+    panic_to_file("set-gyro-quaternions: non-finite first timestamp. wtf?",
+                  !std::isfinite(problem.quats_start));
     problem.quats = ndspline::make(new_quats);
 }
 
@@ -179,11 +189,10 @@ void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const dou
     flow.rays_b = arma::mat(const_cast<double*>(rays_b), 3, count, false, true);
     flow.ts_a = arma::mat(const_cast<double*>(ts_a), 1, count, false, true);
     flow.ts_b = arma::mat(const_cast<double*>(ts_b), 1, count, false, true);
-    panic_to_file("non-finite numbers in rays_a", !flow.rays_a.is_finite());
-    panic_to_file("non-finite numbers in rays_b", !flow.rays_b.is_finite());
-    panic_to_file("non-finite numbers in ts_a", !flow.ts_a.is_finite());
-    panic_to_file("non-finite numbers in ts_b", !flow.ts_b.is_finite());
-
+    panic_to_file("set-track-result: non-finite numbers in rays_a", !flow.rays_a.is_finite());
+    panic_to_file("set-track-result: non-finite numbers in rays_b", !flow.rays_b.is_finite());
+    panic_to_file("set-track-result: non-finite numbers in ts_a", !flow.ts_a.is_finite());
+    panic_to_file("set-track-result: non-finite numbers in ts_b", !flow.ts_b.is_finite());
 }
 
 std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int frame_begin,
