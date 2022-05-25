@@ -155,6 +155,16 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
         new_timestamps_vec.push_back(k_us_in_sec * k_uhz_in_hz * sample / rounded_sr);
     }
 
+    for (int i = 1; i < count; ++i) {
+#if 1  // this is slow, enable only if needed
+        panic_to_file(
+            ("set-gyro-quaternions:  timestamps out of order at pos " + std::to_string(i) + " (" +
+             std::to_string(timestamps_us[i - 1]) + " > " + std::to_string(timestamps_us[i]) + ")")
+                .c_str(),
+            timestamps_us[i - 1] > timestamps_us[i]);
+#endif
+    }
+
     arma::mat new_quats(4, new_timestamps_vec.size());
     for (int i = 0; i < new_timestamps_vec.size(); ++i) {
         auto ts = new_timestamps_vec[i];
