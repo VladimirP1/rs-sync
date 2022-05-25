@@ -41,14 +41,8 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
     arma::mat quats(4, gyro.n_cols);
     quats.col(0) = {1, 0, 0, 0};
     for (int i = 1; i < quats.n_cols; ++i) {
-        arma::vec3 gyro_vec = {-gyro.col(i)[1], gyro.col(i)[0], gyro.col(i)[2]};
-        auto q = quat_from_aa(gyro_vec * (timestamps(i) - timestamps(i - 1)));
-        quats.col(i) = arma::normalise(quat_prod(quats.col(i - 1), q));
-    }
-
-    auto fix_quat = quat_from_aa({M_PI, 0, 0});
-    for (int i = 1; i < quats.n_cols; ++i) {
-        quats.col(i) = quat_conj(quat_prod(quats.col(i), fix_quat));
+        auto q = quat_from_aa(gyro.col(i) * (timestamps(i) - timestamps(i - 1)));
+        quats.col(i) = arma::normalise(quat_prod(q, quats.col(i - 1)));
     }
 
     std::vector<uint64_t> i_timestamps;
