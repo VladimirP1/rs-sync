@@ -1,8 +1,9 @@
 #include "core_private.hpp"
 
-#include <inline_utils.hpp>
-#include <quat.hpp>
 #include <backtrack.hpp>
+#include <inline_utils.hpp>
+#include <panic.hpp>
+#include <quat.hpp>
 
 #include <ensmallen_bits/log.hpp>
 #include <ensmallen_bits/callbacks/callbacks.hpp>
@@ -72,10 +73,15 @@ std::pair<double, double> pre_sync(OptData& opt_data, int frame_begin, int frame
         std::for_each(std::execution::par, frames.begin(), frames.end(),
                       [frame_begin, frame_end, delay, &opt_data, &cost, &mtx](int frame) {
                           arma::mat P = opt_compute_problem(frame, delay, opt_data);
+                          panic_to_file("pre-sync: non-finite numbers in P", !P.is_finite());
                           arma::mat M = opt_guess_translational_motion(P, 20);
+                          panic_to_file("pre-sync: non-finite numbers in M", !M.is_finite());
                           double k = 1 / arma::norm(P * M) * 1e2;
+                          panic_to_file("pre-sync: non-finite k", !std::isfinite(k));
                           arma::mat r = (P * M) * (k / arma::norm(M));
+                          panic_to_file("pre-sync: non-finite r", !r.is_finite());
                           arma::mat rho = arma::log1p(r % r);
+                          panic_to_file("pre-sync: non-finite rho", !rho.is_finite());
                           std::unique_lock<std::mutex> lock(mtx);
                           cost += sqrt(arma::accu(arma::sqrt(rho)));
                       });
@@ -157,9 +163,12 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
             1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
         new_quats.col(i) =
             quat_slerp(arma::vec4(quats + 4 * (idx - 1)), arma::vec4(quats + 4 * idx), t);
+        panic_to_file("non-finite sample after interpolation", !new_quats.col(i).is_finite());
     }
     problem.sample_rate = 1. * rounded_sr / k_uhz_in_hz;
     problem.quats_start = 1. * new_timestamps_vec[0] / k_us_in_sec;
+    panic_to_file("non-finite sample rate. wtf?", !std::isfinite(problem.sample_rate));
+    panic_to_file("non-finite first timestamp. wtf?", !std::isfinite(problem.quats_start));
     problem.quats = ndspline::make(new_quats);
 }
 
@@ -170,6 +179,11 @@ void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const dou
     flow.rays_b = arma::mat(const_cast<double*>(rays_b), 3, count, false, true);
     flow.ts_a = arma::mat(const_cast<double*>(ts_a), 1, count, false, true);
     flow.ts_b = arma::mat(const_cast<double*>(ts_b), 1, count, false, true);
+    panic_to_file("non-finite numbers in rays_a", !flow.rays_a.is_finite());
+    panic_to_file("non-finite numbers in rays_b", !flow.rays_b.is_finite());
+    panic_to_file("non-finite numbers in ts_a", !flow.ts_a.is_finite());
+    panic_to_file("non-finite numbers in ts_b", !flow.ts_b.is_finite());
+
 }
 
 std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int frame_begin,
