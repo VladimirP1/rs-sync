@@ -169,22 +169,16 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
     for (int i = 0; i < new_timestamps_vec.size(); ++i) {
         auto ts = new_timestamps_vec[i];
         size_t idx = std::lower_bound(timestamps_us, timestamps_us + count, ts) - timestamps_us;
-        // clang-format off
-        #if 1 // this is slow, enable only if needed
-        panic_to_file(("set-gyro-quaternions: duplicate timestamps (" +std::to_string(idx) + ")").c_str(), timestamps_us[idx] == timestamps_us[idx - 1]); 
-        #endif
-        // clang-format on
-        double t =
-            1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
-        auto a = arma::vec4(quats + 4 * (idx - 1));
-        auto b = arma::vec4(quats + 4 * idx);
-        // clang-format off
-        #if 1 // this is slow, enable only if needed
-        panic_to_file(("set-gyro-quaternions: non-finite gyro sample in arguments (" + std::to_string(a[0]) + "," + std::to_string(a[1]) + "," + std::to_string(a[2]) + "," + std::to_string(a[3]) + ")").c_str(), !a.is_finite());
-        panic_to_file(("set-gyro-quaternions: non-finite gyro sample in arguments (" + std::to_string(b[0]) + "," + std::to_string(b[1]) + "," + std::to_string(b[2]) + "," + std::to_string(b[3]) + ")").c_str(), !b.is_finite());
-        #endif
-        // clang-format on
-        new_quats.col(i) = quat_slerp(a, b, t);
+        if (idx > 0) {
+            double t =
+                1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
+            auto a = arma::vec4(quats + 4 * (idx - 1));
+            auto b = arma::vec4(quats + 4 * idx);
+
+            new_quats.col(i) = quat_slerp(a, b, t);
+        } else {
+            new_quats.col(i) = arma::vec4(quats + 4 * idx);
+        }
         panic_to_file("set-gyro-quaternions: non-finite sample after interpolation",
                       !new_quats.col(i).is_finite());
     }
