@@ -159,6 +159,11 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
     for (int i = 0; i < new_timestamps_vec.size(); ++i) {
         auto ts = new_timestamps_vec[i];
         size_t idx = std::lower_bound(timestamps_us, timestamps_us + count, ts) - timestamps_us;
+        // clang-format off
+        #if 1 // this is slow, enable only if needed
+        panic_to_file(("set-gyro-quaternions: duplicate timestamps (" +std::to_string(idx) + ")").c_str(), timestamps_us[idx] == timestamps_us[idx - 1]); 
+        #endif
+        // clang-format on
         double t =
             1. * (ts - timestamps_us[idx - 1]) / (timestamps_us[idx] - timestamps_us[idx - 1]);
         auto a = arma::vec4(quats + 4 * (idx - 1));
