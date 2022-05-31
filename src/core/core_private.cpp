@@ -12,7 +12,7 @@
 
 #include <execution>
 
-arma::mat opt_compute_problem(int frame, double gyro_delay, const OptData& data) {
+arma::mat opt_compute_problem(int64_t frame, double gyro_delay, const OptData& data) {
     const auto& flow = data.frame_data.at(frame);
     arma::mat ap = flow.rays_a;
     arma::mat bp = flow.rays_b;
@@ -58,10 +58,10 @@ arma::vec3 opt_guess_translational_motion(const arma::mat& problem, int max_iter
     return best_sol;
 }
 
-std::pair<double, double> pre_sync(OptData& opt_data, int frame_begin, int frame_end,
+std::pair<double, double> pre_sync(OptData& opt_data, int64_t frame_begin, int64_t frame_end,
                                    double rough_delay, double search_radius, double step) {
     std::vector<std::pair<double, double>> results;
-    std::vector<int> frames;
+    std::vector<int64_t> frames;
     for (auto& [frame, _] : opt_data.frame_data) {
         if (frame < frame_begin || frame >= frame_end) continue;
         frames.push_back(frame);
@@ -71,7 +71,7 @@ std::pair<double, double> pre_sync(OptData& opt_data, int frame_begin, int frame
         std::mutex mtx;
         double cost{};
         std::for_each(std::execution::par, frames.begin(), frames.end(),
-                      [frame_begin, frame_end, delay, &opt_data, &cost, &mtx](int frame) {
+                      [frame_begin, frame_end, delay, &opt_data, &cost, &mtx](int64_t frame) {
                           arma::mat P = opt_compute_problem(frame, delay, opt_data);
                           panic_to_file("pre-sync: non-finite numbers in P", !P.is_finite());
                           arma::mat M = opt_guess_translational_motion(P, 20);
@@ -107,7 +107,7 @@ void FrameState::Loss(const arma::mat& gyro_delay, const arma::mat& motion_estim
     auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
     auto [v7, j7] = log1p_jac(v6);
     auto [v8, j8] = sum_jac(v7);
-
+    
     loss = v8;
 
     jac_gyro_delay = (loss_r - loss_l) / 2 / kNumericDiffStep;
@@ -140,16 +140,16 @@ void SyncProblemPrivate::SetGyroQuaternions(const double* data, size_t count, do
     problem.quats = ndspline::make(arma::mat(const_cast<double*>(data), 4, count, false, true));
 }
 
-void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const double* quats,
+void SyncProblemPrivate::SetGyroQuaternions(const int64_t* timestamps_us, const double* quats,
                                             size_t count) {
-    static constexpr uint64_t k_uhz_in_hz = 1000000ULL;
-    static constexpr uint64_t k_us_in_sec = 1000000ULL;
-    uint64_t actual_sr_uhz =
+    static constexpr int64_t k_uhz_in_hz = 1000000LL;
+    static constexpr int64_t k_us_in_sec = 1000000LL;
+    int64_t actual_sr_uhz =
         k_uhz_in_hz * k_us_in_sec * count / (timestamps_us[count - 1] - timestamps_us[0]);
     int rounded_sr =
         int(round(actual_sr_uhz / 50. / k_uhz_in_hz) * 50 * k_uhz_in_hz);  // round to nearest 50hz
 
-    std::vector<uint64_t> new_timestamps_vec;
+    std::vector<int64_t> new_timestamps_vec;
     for (int sample = std::ceil(timestamps_us[0] * rounded_sr);
          k_us_in_sec * k_uhz_in_hz * sample / rounded_sr < timestamps_us[count - 1]; sample += 1) {
         new_timestamps_vec.push_back(k_us_in_sec * k_uhz_in_hz * sample / rounded_sr);
@@ -190,7 +190,7 @@ void SyncProblemPrivate::SetGyroQuaternions(const uint64_t* timestamps_us, const
     problem.quats = ndspline::make(new_quats);
 }
 
-void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const double* ts_b,
+void SyncProblemPrivate::SetTrackResult(int64_t frame, const double* ts_a, const double* ts_b,
                                         const double* rays_a, const double* rays_b, size_t count) {
     auto& flow = problem.frame_data[frame];
     flow.rays_a = arma::mat(const_cast<double*>(rays_a), 3, count, false, true);
@@ -203,14 +203,14 @@ void SyncProblemPrivate::SetTrackResult(int frame, const double* ts_a, const dou
     panic_to_file("set-track-result: non-finite numbers in ts_b", !flow.ts_b.is_finite());
 }
 
-std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int frame_begin,
-                                                      int frame_end, double search_step,
+std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int64_t frame_begin,
+                                                      int64_t frame_end, double search_step,
                                                       double search_radius) {
     return pre_sync(problem, frame_begin, frame_end, initial_delay, search_radius, search_step);
 }
 
-std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int frame_begin,
-                                                   int frame_end) {
+std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int64_t frame_begin,
+                                                   int64_t frame_end) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = initial_delay;
 
@@ -329,10 +329,10 @@ std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int fra
     return {simple_objective(gyro_delay), gyro_delay[0]};
 }
 
-void SyncProblemPrivate::DebugPreSync(double initial_delay, int frame_begin, int frame_end,
+void SyncProblemPrivate::DebugPreSync(double initial_delay, int64_t frame_begin, int64_t frame_end,
                                       double search_radius, double* delays, double* costs,
                                       int point_count) {
-    std::vector<int> frames;
+    std::vector<int64_t> frames;
     for (auto& [frame, _] : problem.frame_data) {
         if (frame < frame_begin || frame >= frame_end) continue;
         frames.push_back(frame);
@@ -342,7 +342,7 @@ void SyncProblemPrivate::DebugPreSync(double initial_delay, int frame_begin, int
         std::mutex mtx;
         double cost{};
         std::for_each(std::execution::par, frames.begin(), frames.end(),
-                      [this, frame_begin, frame_end, delay, &cost, &mtx](int frame) {
+                      [this, frame_begin, frame_end, delay, &cost, &mtx](int64_t frame) {
                           arma::mat P = opt_compute_problem(frame, delay, problem);
                           arma::mat M = opt_guess_translational_motion(P, 20);
                           double k = 1 / arma::norm(P * M) * 1e2;
