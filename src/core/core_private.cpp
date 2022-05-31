@@ -76,8 +76,7 @@ std::pair<double, double> pre_sync(OptData& opt_data, int64_t frame_begin, int64
                           panic_to_file("pre-sync: non-finite numbers in P", !P.is_finite());
                           arma::mat M = opt_guess_translational_motion(P, 20);
                           panic_to_file("pre-sync: non-finite numbers in M", !M.is_finite());
-                          double k = 1 / arma::norm(P * M) * 1e2;
-                          panic_to_file("pre-sync: non-finite k", !std::isfinite(k));
+                          double k = clamp_k(1 / arma::norm(P * M) * 1e2);
                           arma::mat r = (P * M) * (k / arma::norm(M));
                           panic_to_file("pre-sync: non-finite r", !r.is_finite());
                           arma::mat rho = arma::log1p(r % r);
@@ -130,7 +129,7 @@ arma::vec3 FrameState::GuessMotion(double gyro_delay) const {
 
 double FrameState::GuessK(double gyro_delay) const {
     arma::mat P = opt_compute_problem(frame_, gyro_delay, *problem_);
-    return 1 / arma::norm(P * motion_vec) * 1e2;
+    return clamp_k(1 / arma::norm(P * motion_vec) * 1e2);
 }
 
 void SyncProblemPrivate::SetGyroQuaternions(const double* data, size_t count, double sample_rate,
@@ -345,7 +344,7 @@ void SyncProblemPrivate::DebugPreSync(double initial_delay, int64_t frame_begin,
                       [this, frame_begin, frame_end, delay, &cost, &mtx](int64_t frame) {
                           arma::mat P = opt_compute_problem(frame, delay, problem);
                           arma::mat M = opt_guess_translational_motion(P, 20);
-                          double k = 1 / arma::norm(P * M) * 1e2;
+                          double k = clamp_k(1 / arma::norm(P * M) * 1e2);
                           arma::mat r = (P * M) * (k / arma::norm(M));
                           arma::mat rho = arma::log1p(r % r);
                           std::unique_lock<std::mutex> lock(mtx);

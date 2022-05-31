@@ -46,3 +46,5 @@ inline std::tuple<arma::mat, arma::mat> mul_const_jac(arma::mat x, double y) {
     dx.eye();
     return {x * y, dx * y};
 }
+
+inline double clamp_k(double k) { return std::clamp(k, 1e1, 1e3); }
