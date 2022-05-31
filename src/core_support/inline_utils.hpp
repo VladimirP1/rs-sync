@@ -11,7 +11,7 @@ inline arma::mat safe_normalize(arma::mat m) {
 }
 
 inline int mtrand(const int& min, const int& max) {
-    static thread_local std::mt19937 generator;
+    static thread_local std::mt19937 generator(std::random_device{}());
     std::uniform_int_distribution<int> distribution(min, max);
     return distribution(generator);
 }

@@ -45,7 +45,7 @@ void optdata_fill_gyro(ISyncProblem& problem, const char* filename, const char* 
         quats.col(i) = arma::normalise(quat_prod(q, quats.col(i - 1)));
     }
 
-    std::vector<uint64_t> i_timestamps;
+    std::vector<int64_t> i_timestamps;
     for (auto ts : timestamps) {
         i_timestamps.push_back(ts * 1000000);
     }
