@@ -141,17 +141,17 @@ void SyncProblemPrivate::SetGyroQuaternions(const double* data, size_t count, do
 
 void SyncProblemPrivate::SetGyroQuaternions(const int64_t* timestamps_us, const double* quats,
                                             size_t count) {
-    static constexpr int64_t k_uhz_in_hz = 1000000LL;
-    static constexpr int64_t k_us_in_sec = 1000000LL;
-    int64_t actual_sr_uhz =
+    static constexpr uint64_t k_uhz_in_hz = 1000000ULL;
+    static constexpr uint64_t k_us_in_sec = 1000000ULL;
+    uint64_t actual_sr_uhz =
         k_uhz_in_hz * k_us_in_sec * count / (timestamps_us[count - 1] - timestamps_us[0]);
-    int rounded_sr =
-        int(round(actual_sr_uhz / 50. / k_uhz_in_hz) * 50 * k_uhz_in_hz);  // round to nearest 50hz
+    int rounded_sr_hz =
+        int(round(actual_sr_uhz / 50. / k_uhz_in_hz) * 50);  // round to nearest 50hz
 
-    std::vector<int64_t> new_timestamps_vec;
-    for (int sample = std::ceil(timestamps_us[0] * rounded_sr);
-         k_us_in_sec * k_uhz_in_hz * sample / rounded_sr < timestamps_us[count - 1]; sample += 1) {
-        new_timestamps_vec.push_back(k_us_in_sec * k_uhz_in_hz * sample / rounded_sr);
+    std::vector<uint64_t> new_timestamps_vec;
+    for (int sample = std::ceil(timestamps_us[0] * rounded_sr_hz / k_us_in_sec);
+         k_us_in_sec * sample / rounded_sr_hz < timestamps_us[count - 1]; sample += 1) {
+        new_timestamps_vec.push_back(k_us_in_sec * sample / rounded_sr_hz);
     }
 
     for (int i = 1; i < count; ++i) {
@@ -180,7 +180,7 @@ void SyncProblemPrivate::SetGyroQuaternions(const int64_t* timestamps_us, const 
         panic_to_file("set-gyro-quaternions: non-finite sample after interpolation",
                       !new_quats.col(i).is_finite());
     }
-    problem.sample_rate = 1. * rounded_sr / k_uhz_in_hz;
+    problem.sample_rate = 1. * rounded_sr_hz;
     problem.quats_start = 1. * new_timestamps_vec[0] / k_us_in_sec;
     panic_to_file("set-gyro-quaternions: non-finite sample rate. wtf?",
                   !std::isfinite(problem.sample_rate));
