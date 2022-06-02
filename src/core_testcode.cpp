@@ -302,13 +302,16 @@ int main(int argc, char** argv) {
 
     for (auto pos : syncpoints) {
         std::cerr << pos << std::endl;
-        double delay = input["initial_guess"].get<double>() / 1000;
+        const double initial_delay = input["initial_guess"].get<double>() / 1000;
+        double delay = initial_delay;
+        double presync_radius = std::numeric_limits<double>::infinity();
         if (input.contains("use_simple_presync") && input["use_simple_presync"].get<bool>()) {
+            presync_radius = input["simple_presync_radius"].get<double>() / 1000.;
             delay = sp->PreSync(delay, pos, pos + sync_window,
                                 input["simple_presync_step"].get<double>() / 1000.,
-                                input["simple_presync_radius"].get<double>() / 1000.).second;
+                                presync_radius).second;
         }
-        for (int i = 0; i < 4; ++i) delay = sp->Sync(delay, pos, pos + sync_window).second;
+        for (int i = 0; i < 4; ++i) delay = sp->Sync(delay, pos, pos + sync_window, initial_delay, presync_radius).second;
         csv << pos << "," << 1000 * delay << std::endl;
     }
 

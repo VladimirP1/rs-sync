@@ -50,10 +50,12 @@ struct SyncProblemPrivate : public ISyncProblem {
                         const double* rays_b, size_t count) override;
     std::pair<double, double> PreSync(double initial_delay, int64_t frame_begin, int64_t frame_end,
                                       double search_step, double search_radius) override;
-    std::pair<double, double> Sync(double initial_delay, int64_t frame_begin, int64_t frame_end) override;
+    std::pair<double, double> Sync(double initial_delay, int64_t frame_begin, int64_t frame_end,
+                                   double search_center, double search_radius) override;
 
-    void DebugPreSync(double initial_delay, int64_t frame_begin, int64_t frame_end, double search_radius,
-                      double* delays, double* costs, int point_count) override;
+    void DebugPreSync(double initial_delay, int64_t frame_begin, int64_t frame_end,
+                      double search_radius, double* delays, double* costs,
+                      int point_count) override;
 
     OptData problem;
 };

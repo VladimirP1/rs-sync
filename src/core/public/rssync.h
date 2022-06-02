@@ -16,10 +16,12 @@ class ISyncProblem {
                                     size_t count) = 0;
     virtual void SetTrackResult(int64_t frame, const double* ts_a, const double* ts_b,
                                 const double* rays_a, const double* rays_b, size_t count) = 0;
-    virtual std::pair<double, double> PreSync(double initial_delay, int64_t frame_begin, int64_t frame_end,
-                                              double search_step, double search_radius) = 0;
+    virtual std::pair<double, double> PreSync(double initial_delay, int64_t frame_begin,
+                                              int64_t frame_end, double search_step,
+                                              double search_radius) = 0;
     virtual std::pair<double, double> Sync(double initial_delay, int64_t frame_begin,
-                                           int64_t frame_end) = 0;
+                                           int64_t frame_end, double search_center,
+                                           double search_radius) = 0;
 
     virtual void DebugPreSync(double initial_delay, int64_t frame_begin, int64_t frame_end,
                               double search_radius, double* delays, double* costs,

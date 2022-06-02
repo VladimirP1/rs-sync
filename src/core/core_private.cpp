@@ -106,7 +106,7 @@ void FrameState::Loss(const arma::mat& gyro_delay, const arma::mat& motion_estim
     auto [v6, j6a, j6b] = div_jac(v2, v5[0]);
     auto [v7, j7] = log1p_jac(v6);
     auto [v8, j8] = sum_jac(v7);
-    
+
     loss = v8;
 
     jac_gyro_delay = (loss_r - loss_l) / 2 / kNumericDiffStep;
@@ -209,7 +209,8 @@ std::pair<double, double> SyncProblemPrivate::PreSync(double initial_delay, int6
 }
 
 std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int64_t frame_begin,
-                                                   int64_t frame_end) {
+                                                   int64_t frame_end, double search_center,
+                                                   double search_radius) {
     arma::mat gyro_delay(1, 1);
     gyro_delay[0] = initial_delay;
 
@@ -319,6 +320,10 @@ std::pair<double, double> SyncProblemPrivate::Sync(double initial_delay, int64_t
         }
 
         if (converge_counter > 5) {
+            break;
+        }
+
+        if (std::fabs(gyro_delay[0] - search_center) > search_radius) {
             break;
         }
 
