@@ -1,3 +1,10 @@
+### About
+This project was done as a part of a bachelor's thesis. Its goal was to improve synchronisation of rolling-shutter videos in GyroFlow.
+The thesis full text (in Russian) is [here](thesis-text.pdf).
+
+This repository contains the C++ version which was used for development, then the code has been translated to Rust by AdrianEddy.
+The Rust version is [here](https://github.com/gyroflow/rs-sync).
+
 ### Build steps
 1. `cargo build --release` to build the telemetry-parser wrapper
 2. Clone vcpkg into `ext/vcpkg`, bootstrap it
